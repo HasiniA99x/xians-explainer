@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Xians Webhook Flow</title>
+  <meta name="description" content="Step-by-step walkthrough of a GitHub webhook through XiansAi.Server, Temporal and the Xianix agent, with the data at every step." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <p class="eyebrow">Xians · builtin webhooks</p>
+      <h1>How a GitHub webhook travels through Xians</h1>
+      <p class="lede">
+        Follow one pull-request event from GitHub to a posted review. Every step is a debug point:
+        select it to see the data that exists right there, which IDs are known, and the code that runs.
+      </p>
+      <nav class="scenarios" role="tablist" aria-label="Scenario" id="scenarios"></nav>
+      <p class="scenario-blurb" id="scenario-blurb"></p>
+    </div>
+  </header>
+
+  <main class="wrap layout">
+    <section class="card diagram-card" aria-label="Flow diagram">
+      <div class="card-head">
+        <h2>Flow</h2>
+        <div class="legend" aria-label="Legend">
+          <span><i class="ln ln-call"></i>call</span>
+          <span><i class="ln ln-async"></i>starts, doesn't wait</span>
+          <span><i class="ln ln-read"></i>reads later</span>
+          <span><i class="ln ln-return"></i>answer returns</span>
+          <span><i class="bp"></i>debug point</span>
+        </div>
+      </div>
+      <div class="diagram-frame">
+        <svg id="lane-labels" aria-hidden="true"></svg>
+        <div class="diagram-scroll" id="diagram-scroll">
+          <svg id="diagram" role="img" aria-label="Swimlane diagram of the webhook flow"></svg>
+        </div>
+      </div>
+      <div class="controls">
+        <button type="button" class="btn" id="prev" aria-label="Previous step">◀ Prev</button>
+        <button type="button" class="btn btn-primary" id="play" aria-label="Play">▶ Play</button>
+        <button type="button" class="btn" id="next" aria-label="Next step">Next ▶</button>
+        <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Step" />
+        <span class="counter" id="counter"></span>
+      </div>
+      <p class="hint">Keys: <kbd>←</kbd> <kbd>→</kbd> step · <kbd>Space</kbd> play/pause</p>
+    </section>
+
+    <aside class="card panel" id="panel" aria-live="polite"></aside>
+  </main>
+
+  <section class="wrap section">
+    <h2>All the workflows</h2>
+    <p class="section-lede">
+      Two workflows carry a webhook: the server-triggered <b>Integrator Workflow</b> and the agent-started
+      <b>Processing Workflow</b>. The agent defines four more; here is where each fits.
+    </p>
+    <div class="wf-grid" id="workflows"></div>
+  </section>
+
+  <section class="wrap section">
+    <h2>Identifiers along the way</h2>
+    <p class="section-lede">The request ID is the thread that ties the HTTP call, the recorded delivery, the reply and the review run together.</p>
+    <div class="table-scroll">
+      <table class="ids" id="idtrace">
+        <thead><tr><th>ID</th><th>Sample</th><th>Born at</th><th>Travels through</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="wrap foot">
+    Traced from XiansAi.Server, XiansAi.Lib, the-agent and agent-studio. Sample values are invented; their shapes match the code.
+    Steps marked <span class="pr-chip">PR</span> come from open pull requests, not main.
+  </footer>
+
+  <script src="flow-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
