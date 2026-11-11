@@ -1,51 +1,25 @@
 # Xians webhook flow explainer
 
-An interactive page that follows one GitHub pull-request event through Xians: XiansAi.Server, MongoDB, the server-triggered **Integrator Workflow**, the agent's webhook handler, the agent-started **Processing Workflow** and the executor container. It ends with the review on the PR and the delivery in Agent Studio.
+One page, one flow: a GitHub pull-request webhook through Xians in nine steps, from a labelled PR to a posted review, plus **Redeliver** from Agent Studio.
 
-Every step is a **debug point**. Select it to see:
+- Click a step (or press **Play**, or use **←/→**) to see what happens there in two or three lines.
+- **req** on a step means the delivery's request ID has reached it. That ID is what Studio uses to find all of the delivery's logs.
+- **Show data** has a sample of the data at that step.
 
-- the data that exists at that point (request, stored row, signal payload, Temporal start, reply, container env…),
-- the IDs known there (request ID, delivery ID, workflow IDs, container),
-- what happens, in plain words,
-- where in the code it happens.
-
-Below the flow:
-
-- **Which IDs exist at each step** — a grid that follows the selected scenario and step.
-- **One request ID finds every log** — how Xians.Lib tags every log with the delivery's request ID (scope → async flow → workflow memo → activity header) and how Studio's Logs button finds them.
-- **Redeliver a recorded call** — the round trip, the Deliveries list afterwards, and each outcome (answered, unconfirmed, 409, 403, reused claim).
-
-Steps whose logs carry the request ID show a tag marker.
+The URL keeps the selected step (`index.html#agent`), so you can link to it.
 
 ## Run it
 
-There are no dependencies and no build step. Open `index.html` in a browser.
-
-To serve it over HTTP instead (so the "Copy" buttons can use the clipboard API on every browser):
-
-```bash
-npx serve .            # or: python -m http.server 8080
-```
-
-## Scenarios
-
-| Tab | What it shows |
-|-----|---------------|
-| Review runs | A labelled PR matches `github-pull-request-review`; the agent starts a Processing run and the review is posted. |
-| No rule matched | A PR opened without the label: recorded and answered `ignored`, nothing runs. |
-| Signature fails | `X-Hub-Signature-256` doesn't match the vault secret: answered `ignored`, nothing runs. |
-| Redelivered from Studio | A developer re-sends a recorded call: new delivery, new request ID, its own run. From open PRs XiansAi.Server #666 / agent-studio #175. |
-
-The URL keeps the scenario and step (`index.html#review/rules`), so you can link to a specific step.
+No dependencies and no build step: open `index.html` in a browser.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `flow-data.js` | Lanes, steps, sample data, scenarios and ID trace. Edit this to change the content. |
-| `app.js` | Draws the swimlane diagram, ID grid, figures and the debug panel; playback and keyboard controls. |
+| `flow-data.js` | The nine steps and redelivery: names, short lines, IDs and sample data. Edit this to change the content. |
+| `app.js` | Draws the flow and the detail card; playback and keyboard controls. |
 | `styles.css` | Light and dark themes (follows the OS setting). |
 
 ## Sources
 
-Traced from the code in XiansAi.Server, XiansAi.Lib, the-agent and agent-studio: `main` plus the open PRs for run naming (the-agent #106), request-ID log tags (XiansAi.Lib #146, XiansAi.Server #661, agent-studio #174) and redelivery (XiansAi.Server #666, agent-studio #175). The sample values are invented, but their names and shapes match the code: field names, headers, env vars, workflow IDs and volume names. If the code changes, update the matching step in `flow-data.js`. Each step lists the files it was traced from.
+Traced from XiansAi.Server, XiansAi.Lib, the-agent and agent-studio: `main` plus open PRs for request-ID log tags (XiansAi.Lib #146, XiansAi.Server #661, agent-studio #174), run naming (the-agent #106) and redelivery (XiansAi.Server #666, agent-studio #175). Sample values are invented; their shapes match the code.
