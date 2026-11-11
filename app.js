@@ -38,14 +38,20 @@
     return { id, ...F.steps[id], ...(scenario.overrides[id] || {}) }
   }
 
-  /** In the redelivery scenario the IDs that change are the redelivery's own. */
-  function idValue(scenario, key) {
+  /**
+   * In the redelivery scenario the IDs that change are the redelivery's own. Its first step still
+   * works with the original delivery.
+   */
+  function idValue(scenario, key, stepId) {
     if (scenario.id === 'redelivery') {
       if (key === 'requestId') return F.ID.redeliveryRequestId
       if (key === 'processingWorkflowId') return F.ID.redeliveryProcessingWorkflowId
+      if (key === 'incomingId' && stepId !== 'redeliver') return F.ID.redeliveryIncomingId
     }
     return F.ID[key]
   }
+
+  const tagIcon = (cls = 'ico tag-ico') => `<svg class="${cls}" aria-hidden="true"><use href="#i-tag" /></svg>`
 
   function highlightJson(value) {
     const json = escapeHtml(JSON.stringify(value, null, 2))
@@ -163,6 +169,9 @@
         const mark = el('text', { x: x + R - 2, y: y - R + 1, class: 'pr-mark' }, g)
         mark.textContent = 'PR'
       }
+      if (step.tagged) {
+        el('use', { href: '#i-tag', x: x + R - 5, y: y + R - 9, width: 13, height: 13, class: 'node-tag' }, g)
+      }
       g.addEventListener('click', () => go(i))
       g.addEventListener('keydown', e => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(i) }
@@ -204,7 +213,7 @@
     const lane = F.lanes.find(l => l.id === step.lane)
 
     const ids = (step.ids || [])
-      .map(key => `<div class="id-chip"><b>${escapeHtml(ID_LABELS[key] || key)}</b><code>${escapeHtml(idValue(scenario, key))}</code></div>`)
+      .map(key => `<div class="id-chip"><b>${escapeHtml(ID_LABELS[key] || key)}</b><code>${escapeHtml(idValue(scenario, key, id))}</code></div>`)
       .join('')
     const where = (step.where || [])
       .map(([repo, path]) => `<li><span class="repo">${escapeHtml(repo)}</span><span class="path mono">${escapeHtml(path)}</span></li>`)
@@ -216,7 +225,7 @@
         <span class="lane-chip"><i style="background: var(--lane-${lane.id})"></i>${escapeHtml(lane.name)}</span>
       </div>
       <h3>${step.title}</h3>
-      ${step.pr ? `<div class="pr-note"><span class="pr-chip">PR</span> ${step.pr}</div>` : ''}
+      ${step.tagged ? `<div class="tag-note">${tagIcon()}<span>Logs here carry <code>requestId</code><small>${escapeHtml(step.tagged)}</small></span></div>` : ''}
       <h4><i class="bp"></i>Debug point — data at this step</h4>
       <div class="debug-box">
         <button type="button" class="btn copy" id="copy-json">Copy</button>
@@ -225,8 +234,11 @@
       ${ids ? `<h4>IDs known here</h4><div class="id-chips">${ids}</div>` : ''}
       <h4>What happens</h4>
       <ul>${step.what.map(line => `<li>${line}</li>`).join('')}</ul>
-      <h4>Where in the code</h4>
-      <ul class="where">${where}</ul>
+      <details class="where-box">
+        <summary>Where in the code <span class="count">${(step.where || []).length}</span></summary>
+        <ul class="where">${where}</ul>
+      </details>
+      ${step.pr ? `<div class="pr-note"><span class="pr-chip">PR</span> ${step.pr}</div>` : ''}
     `
 
     $('#copy-json').addEventListener('click', async e => {
@@ -263,6 +275,7 @@
     const last = state.scenario.order.length - 1
     state.index = Math.max(0, Math.min(last, index))
     updateDiagram(instant)
+    updateIdGrid()
     renderPanel()
     if (state.index === last) stop()
     updateControls()
@@ -292,36 +305,184 @@
     state.index = index >= 0 ? index : 0
     renderTabs()
     renderDiagram()
+    renderIdGrid()
     go(state.index, true)
   }
 
-  // ── Static sections ───────────────────────────────────────────────────────
+  // ── ID grid: which identifiers exist at each step of the current scenario ─
 
-  function renderWorkflows() {
-    $('#workflows').innerHTML = F.workflows
-      .map(wf => {
-        const inFlow = !wf.inFlow.startsWith('Not')
-        return `
-        <article class="card wf${inFlow ? ' in-flow' : ''}">
-          <h3>${escapeHtml(wf.name)}</h3>
-          <p class="kind">${escapeHtml(wf.kind)}</p>
-          <span class="badge">${escapeHtml(wf.inFlow)}</span>
-          <dl>
-            <dt>Started by</dt><dd>${escapeHtml(wf.startedBy)}</dd>
-            <dt>ID</dt><dd class="mono">${escapeHtml(wf.id)}</dd>
-            <dt>Lifetime</dt><dd>${escapeHtml(wf.lifetime)}</dd>
-            <dt>Does</dt><dd>${escapeHtml(wf.does)}</dd>
-            <dt>Code</dt><dd class="mono">${escapeHtml(wf.code)}</dd>
-          </dl>
-        </article>`
-      })
-      .join('')
+  const GRID = { label: 176, col: 46, head: 36, row: 26 }
+  const ID_COLORS = {
+    githubDelivery: 'var(--lane-github)',
+    requestId: 'var(--accent)',
+    incomingId: 'var(--lane-mongo)',
+    integratorWorkflowId: 'var(--lane-integrator)',
+    processingWorkflowId: 'var(--lane-processing)',
+    containerId: 'var(--lane-executor)',
   }
 
-  function renderIdTrace() {
-    $('#idtrace tbody').innerHTML = F.idTrace
-      .map(row => `<tr><td><b>${escapeHtml(row.name)}</b></td><td><code>${escapeHtml(F.ID[row.key])}</code></td><td>${escapeHtml(row.born)}</td><td>${escapeHtml(row.travels)}</td></tr>`)
-      .join('')
+  function renderIdGrid() {
+    const scenario = state.scenario
+    const svg = $('#idgrid')
+    svg.innerHTML = ''
+    const rows = [...F.idTrace, { key: 'tagged', name: 'Logs tagged', born: 'Xians.Lib', travels: 'Every log written while handling the request carries properties.requestId.' }]
+    const cols = scenario.order.map(id => stepFor(scenario, id))
+    const width = GRID.label + cols.length * GRID.col + 8
+    const height = GRID.head + rows.length * GRID.row + 8
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`)
+    svg.setAttribute('width', width)
+    svg.setAttribute('height', height)
+
+    rows.forEach((_, r) => {
+      el('rect', { x: 0, y: GRID.head + r * GRID.row, width, height: GRID.row, class: `lane-band${r % 2 ? ' alt' : ''}` }, svg)
+    })
+    el('rect', { id: 'idgrid-current', x: 0, y: 2, width: GRID.col, height: height - 4, rx: 8, class: 'idgrid-current' }, svg)
+
+    cols.forEach((step, c) => {
+      const cx = GRID.label + c * GRID.col + GRID.col / 2
+      el('circle', { cx, cy: 18, r: 11, class: 'idgrid-step', style: `stroke: var(--lane-${step.lane})` }, svg)
+      el('text', { x: cx, y: 18, class: 'idgrid-num' }, svg).textContent = c + 1
+    })
+
+    rows.forEach((row, r) => {
+      const y = GRID.head + r * GRID.row
+      const label = el('text', { x: 12, y: y + 17, class: 'idgrid-name' }, svg)
+      label.textContent = row.name
+      const tip = el('title', {}, label)
+      tip.textContent = row.key === 'tagged' ? row.travels : `${idValue(scenario, row.key)}\nBorn: ${row.born}\n${row.travels}`
+
+      if (row.key === 'tagged') {
+        cols.forEach((step, c) => {
+          if (!step.tagged) return
+          el('use', { href: '#i-tag', x: GRID.label + c * GRID.col + GRID.col / 2 - 8, y: y + 5, width: 16, height: 16, class: 'node-tag' }, svg)
+        })
+        return
+      }
+
+      // Contiguous stretches where the ID is known, drawn as one bar; the dot marks where it appears.
+      const known = cols.map(step => (step.ids || []).includes(row.key))
+      for (let c = 0; c < known.length; c++) {
+        if (!known[c]) continue
+        let end = c
+        while (end + 1 < known.length && known[end + 1]) end++
+        const x = GRID.label + c * GRID.col + 8
+        const w = (end - c + 1) * GRID.col - 16
+        el('rect', { x, y: y + 8, width: w, height: 10, rx: 5, class: 'idgrid-bar', style: `fill: ${ID_COLORS[row.key]}` }, svg)
+        el('circle', { cx: x + 5, cy: y + 13, r: 5, class: 'idgrid-dot', style: `fill: ${ID_COLORS[row.key]}` }, svg)
+        c = end
+      }
+    })
+
+    cols.forEach((step, c) => {
+      const hit = el('rect', { x: GRID.label + c * GRID.col, y: 0, width: GRID.col, height, class: 'idgrid-hit' }, svg)
+      el('title', {}, hit).textContent = `Step ${c + 1}: ${step.title}`
+      hit.addEventListener('click', () => { stop(); go(c) })
+    })
+  }
+
+  function updateIdGrid() {
+    const x = GRID.label + state.index * GRID.col
+    const current = $('#idgrid-current')
+    if (current) current.setAttribute('x', x)
+    const scroller = $('#idgrid-scroll')
+    if (scroller && (x < scroller.scrollLeft + GRID.label || x + GRID.col > scroller.scrollLeft + scroller.clientWidth)) {
+      scroller.scrollTo({ left: Math.max(0, x - scroller.clientWidth / 2) })
+    }
+  }
+
+  // ── Figures ───────────────────────────────────────────────────────────────
+
+  function text(parent, x, y, cls, value, attrs = {}) {
+    const node = el('text', { x, y, class: cls, ...attrs }, parent)
+    node.textContent = value
+    return node
+  }
+
+  /** The log rows in "One request ID finds every log". */
+  function renderLogFigure() {
+    const g = $('#fig-logs')
+    const rows = [
+      ['integrator', 'Dequeued message for processing'],
+      ['handler', 'Signature verified (github)'],
+      ['handler', 'Matched github-pull-request-review'],
+      ['processing', 'Workspace volume ready'],
+      ['processing', `Container ${F.ID.containerId} started`],
+      ['processing', 'Raise-event ai-hub-metrics sent'],
+    ]
+    rows.forEach(([lane, message], i) => {
+      const y = 50 + i * 50
+      el('rect', { x: 660, y, width: 230, height: 42, rx: 8, class: 'fig-log' }, g)
+      el('circle', { cx: 676, cy: y + 14, r: 5, style: `fill: var(--lane-${lane})` }, g)
+      text(g, 688, y + 18, 'fig-log-text', message)
+      el('use', { href: '#i-tag', x: 686, y: y + 24, width: 12, height: 12, class: 'fig-accent-fill' }, g)
+      text(g, 702, y + 34, 'fig-mono fig-small fig-accent', `requestId ${F.ID.requestId.slice(0, 8)}…`)
+    })
+  }
+
+  /** The round trip in "Redeliver a recorded call". */
+  function renderRedeliverFigure() {
+    const g = $('#fig-redeliver')
+    const W = 150, H = 118, Y = 30, GAP = 30
+    const boxX = i => 40 + i * (W + GAP)
+    const box = (i, lane, title) => {
+      const x = boxX(i)
+      el('rect', { x, y: Y, width: W, height: H, rx: 10, class: 'fig-box' }, g)
+      el('rect', { x, y: Y, width: W, height: 5, rx: 2, style: `fill: var(--lane-${lane})` }, g)
+      text(g, x + 14, Y + 28, 'fig-title', title)
+      return x
+    }
+
+    let x = box(0, 'studio', 'Agent Studio')
+    el('rect', { x: x + 14, y: Y + 42, width: 122, height: 30, rx: 6, style: 'fill: var(--lane-studio)' }, g)
+    text(g, x + 75, Y + 62, 'fig-btn-solid', 'Redeliver now', { 'text-anchor': 'middle' })
+    text(g, x + 14, Y + 96, 'fig-sub', 'developer · admin')
+
+    x = box(1, 'server', 'Admin API')
+    el('use', { href: '#i-check', x: x + 12, y: Y + 44, width: 18, height: 18, class: 'fig-ok' }, g)
+    text(g, x + 34, Y + 58, 'fig-sub', 'capability')
+    text(g, x + 14, Y + 80, 'fig-mono fig-small fig-accent', 'webhooks:redeliver')
+    text(g, x + 14, Y + 104, 'fig-sub', 'acts for the user')
+
+    x = box(2, 'server', 'Signed claim')
+    el('rect', { x: x + 14, y: Y + 40, width: 122, height: 44, rx: 6, class: 'fig-ticket' }, g)
+    text(g, x + 75, Y + 58, 'fig-mono fig-small', 'HMAC · 5 min', { 'text-anchor': 'middle' })
+    text(g, x + 75, Y + 75, 'fig-mono fig-small fig-accent', 'one use', { 'text-anchor': 'middle' })
+    text(g, x + 14, Y + 104, 'fig-sub', 'token never stored')
+
+    x = box(3, 'server', 'POST to itself')
+    text(g, x + 14, Y + 58, 'fig-mono fig-small', 'own URL')
+    text(g, x + 14, Y + 74, 'fig-mono fig-small', 'own address')
+    text(g, x + 14, Y + 104, 'fig-sub', 'no outside host')
+
+    x = box(4, 'integrator', 'Normal path')
+    const dots = [['server', 'auth'], ['mongo', 'record'], ['integrator', 'signal'], ['handler', 'agent']]
+    dots.forEach(([lane, name], i) => {
+      const cx = x + 24 + i * 34
+      if (i) el('line', { x1: cx - 28, y1: Y + 58, x2: cx - 6, y2: Y + 58, class: 'fig-rule' }, g)
+      el('circle', { cx, cy: Y + 58, r: 6, class: 'fig-dot', style: `stroke: var(--lane-${lane})` }, g)
+      text(g, cx, Y + 80, 'fig-tiny', name, { 'text-anchor': 'middle' })
+    })
+    text(g, x + 14, Y + 104, 'fig-sub', 'everything runs again')
+
+    x = box(5, 'processing', 'New run')
+    el('rect', { x: x + 14, y: Y + 42, width: 122, height: 28, rx: 14, class: 'fig-pill' }, g)
+    text(g, x + 75, Y + 61, 'fig-mono fig-small fig-accent', `${F.ID.redeliveryRequestId.slice(0, 8)}…`, { 'text-anchor': 'middle' })
+    text(g, x + 14, Y + 90, 'fig-sub', 'new request ID')
+    text(g, x + 14, Y + 106, 'fig-sub', 'own row, logs, review')
+
+    for (let i = 0; i < 5; i++) {
+      const kind = i === 4 ? 'async' : ''
+      el('path', {
+        d: `M ${boxX(i) + W + 2} ${Y + H / 2} H ${boxX(i + 1) - 3}`,
+        class: `fig-edge ${kind}`,
+        'marker-end': `url(#fig-arrow${kind ? '-async' : ''})`,
+      }, g)
+    }
+
+    const from = boxX(4) + W / 2
+    const to = boxX(0) + W / 2
+    el('path', { d: `M ${from} ${Y + H + 2} C ${from} ${Y + H + 78}, ${to} ${Y + H + 78}, ${to} ${Y + H + 5}`, class: 'fig-edge return', 'marker-end': 'url(#fig-arrow-return)' }, g)
+    text(g, (from + to) / 2, Y + H + 76, 'fig-label fig-return', 'answer → toast in Studio', { 'text-anchor': 'middle' })
   }
 
   // ── Wire up ───────────────────────────────────────────────────────────────
@@ -339,8 +500,14 @@
     else if (e.key === ' ') { e.preventDefault(); togglePlay() }
   })
 
-  renderWorkflows()
-  renderIdTrace()
+  $('#play-redelivery').addEventListener('click', () => {
+    selectScenario('redelivery')
+    $('.diagram-card').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+    togglePlay()
+  })
+
+  renderLogFigure()
+  renderRedeliverFigure()
   const [hashScenario, hashStep] = decodeURIComponent(location.hash.slice(1)).split('/')
   selectScenario(hashScenario || F.scenarios[0].id, hashStep)
 })()

@@ -1,12 +1,19 @@
 /*
  * The Xians webhook flow, step by step, traced from the code in:
- *   XiansAi.Server  (main)     — the HTTP edge, recording, signal-with-start, waiting for the reply
- *   XiansAi.Lib     (main)     — BuiltinWorkflow (the Integrator Workflow) and the webhook activity
- *   the-agent       (main+659) — the Xianix AI-DLC Agent: verification, rules, Processing Workflow
- *   agent-studio    (main)     — the Deliveries page
+ *   XiansAi.Server  (main + #661, #666) — the HTTP edge, recording, signal-with-start, redelivery
+ *   XiansAi.Lib     (main + #146)       — BuiltinWorkflow (the Integrator Workflow), request-ID log tags
+ *   the-agent       (main + #106)       — the Xianix AI-DLC Agent: verification, rules, Processing Workflow
+ *   agent-studio    (main + #174, #175) — the Deliveries page, Logs by request ID, Redeliver
  * Every "data" block is a sample of what exists at that point. Values are made up; shapes are real.
  */
 (function () {
+  /** Open pull requests the page draws from, so their steps can be marked. */
+  const PRS = {
+    tags: 'Request-ID log tags: XiansAi.Lib #146, XiansAi.Server #661, agent-studio #174.',
+    naming: 'Naming the run after the request ID: the-agent #106. Before it, the last part was a random GUID.',
+    redeliver: 'Redelivery: XiansAi.Server #666 and agent-studio #175.',
+  }
+
   const ID = {
     tenant: 'acme',
     agent: 'Xianix AI-DLC Agent',
@@ -84,12 +91,12 @@
       lane: 'studio',
       short: 'Redeliver',
       title: 'A developer clicks Redeliver in Agent Studio',
-      pr: 'Redelivery is in review: XiansAi.Server #666 and agent-studio #175.',
+      pr: PRS.redeliver,
       what: [
-        'A Developer (TenantUser) or Tenant Admin opens a delivery and confirms "Redeliver now".',
-        'Studio checks the <code>webhooks:redeliver</code> capability, then calls the Admin API with the service key and <code>X-On-Behalf-Of</code>.',
-        'The server loads the stored call, signs a 5-minute claim (HMAC) and POSTs the stored body and headers to the webhook\'s own URL on its own address — never a host from the request.',
-        'From here the call takes the normal path, so authentication, rate limiting, activation checks and the agent all run again.',
+        'A Developer or Tenant Admin confirms "Redeliver now". Studio checks <code>webhooks:redeliver</code>.',
+        'The server signs a claim (HMAC, 5 minutes, <b>one use</b>) and POSTs the stored body and headers to the webhook\'s own URL on its own address.',
+        'A second redeliver of the same call while one is in flight gets <code>409</code>: nothing is sent.',
+        'From here the call takes the normal path: auth, rate limit, activation checks and the agent all run again.',
       ],
       where: [
         ['agent-studio', 'src/app/api/integrations/[integrationId]/deliveries/[deliveryId]/redeliver/route.ts'],
@@ -174,7 +181,7 @@
         'Checks <code>workflowName</code>, <code>webhookName</code>, <code>agentName</code> and the timeout (1–300 s).',
         'Checks the activation exists and is active: 404 when missing, 409 when deactivated.',
         'Reads the body as a UTF-8 string and builds the receiving workflow ID <code>{tenant}:{agent}:{workflowName}:{activation}</code>.',
-        'Generates a fresh request ID (a new GUID for every call). It ties the reply, the recorded delivery and — with PR #106 — the Processing run together.',
+        'Generates a fresh request ID (a new GUID for every call). It ties the reply, the recorded delivery, the Processing run and every log of the delivery together.',
       ],
       where: [
         ['XiansAi.Server', 'Features/UserApi/Endpoints/WebhookEndpoints.cs — MapPost("/api/user/webhooks/builtin")'],
@@ -279,10 +286,14 @@
         'One long-lived <code>BuiltinWorkflow</code> per activation receives <b>every</b> delivery. Its ID never changes; it continues-as-new when history grows.',
         'The signal handler only enqueues. The run loop dequeues and processes each message as its own task.',
         'Processing happens in an <b>activity</b> (<code>MessageActivities.ProcessAndSendMessageAsync</code>), so the agent\'s code can do I/O and is retried on transient failures.',
-        'Because the workflow is shared, its logs mix all deliveries. The request ID appears only in a few debug lines.',
+        'The workflow is shared, so its logs mix all deliveries — but each log written for this message carries its request ID in <code>properties.requestId</code>.',
       ],
+      pr: PRS.tags,
+      tagged: 'scope around signal, enqueue and dequeue (BeginRequestIdScope)',
       where: [
         ['XiansAi.Lib', 'Xians.Lib/Temporal/Workflows/BuiltinWorkflow.cs — HandleInboundChatOrData, ProcessMessagesLoopAsync'],
+        ['XiansAi.Lib', 'Xians.Lib/Agents/Core/XiansContext.cs — BeginRequestIdScope, SafeRequestId'],
+        ['XiansAi.Lib', 'Xians.Lib/Logging/ApiLoggerProvider.cs — CreateLog'],
         ['XiansAi.Lib', 'Xians.Lib/Temporal/Workflows/Messaging/MessageProcessor.cs — ProcessMessageAsync'],
         ['XiansAi.Lib', 'Xians.Lib/Temporal/Workflows/Messaging/MessageActivities.cs — ProcessWebhookAsync'],
       ],
@@ -299,6 +310,7 @@
           Payload: '(raw body string)',
           Metadata: '(inbound headers)',
         },
+        sampleLog: { level: 'Debug', message: 'Dequeued message for processing', properties: { requestId: ID.requestId } },
       },
     },
 
@@ -312,6 +324,7 @@
         'No secret configured for the provider → verification is skipped and processing continues.',
         'Mismatch → the agent answers <code>status: ignored</code> and nothing runs.',
       ],
+      tagged: 'activity flow (XiansContext request ID)',
       where: [
         ['the-agent', 'TheAgent/Agent/XianixAgent.cs — ConfigureWebhookWorkflow → OnWebhook'],
         ['the-agent', 'TheAgent/Rules/WebhookVerificationGate.cs — VerifyAsync'],
@@ -337,6 +350,7 @@
         'Inputs are pulled from the payload (<code>pr-number</code> ← <code>pull_request.number</code>), along with the plugin, prompt, model, budget, env vars and raise-events.',
         'A dedup guard drops an identical match seen in the last 30 seconds.',
       ],
+      tagged: 'activity flow (XiansContext request ID)',
       where: [
         ['the-agent', 'TheAgent/Orchestrator/EventOrchestrator.cs — OrchestrateAsync'],
         ['the-agent', 'TheAgent/Rules/WebhookRulesEvaluator.cs'],
@@ -375,16 +389,17 @@
       lane: 'handler',
       short: 'Start run',
       title: 'The handler starts one Processing Workflow per match',
-      pr: 'Naming the run after the request ID is the-agent #106. Before it, the last part was a random GUID.',
+      pr: `${PRS.naming} ${PRS.tags}`,
       what: [
-        'For each match the handler calls <code>XiansContext.Workflows.StartAsync&lt;ProcessingWorkflow&gt;</code>.',
-        'It runs inside an activity, so the run is started through the Temporal client (not as a child) with <code>IdConflictPolicy.UseExisting</code>.',
-        'The run ID ends with the request ID (<code>-2</code>, <code>-3</code>… for further matches). An activity retry while the run is still going attaches to it instead of starting a second review.',
+        'For each match the handler calls <code>XiansContext.Workflows.StartAsync&lt;ProcessingWorkflow&gt;</code>, started through the Temporal client with <code>IdConflictPolicy.UseExisting</code>.',
+        'The run ID ends with the request ID (<code>-2</code>, <code>-3</code>… for further matches). A retry while the run is still going attaches to it instead of starting a second review.',
+        'The request ID also goes into the new run\'s <b>memo</b>, so the run\'s logs are tagged too.',
         'The handler does not wait for the review: it only starts it.',
       ],
+      tagged: 'activity flow; copied into the new run\'s memo',
       where: [
         ['the-agent', 'TheAgent/Agent/XianixAgent.cs — DeliveryRunKey'],
-        ['XiansAi.Lib', 'Xians.Lib/Agents/Workflows/SubWorkflowService.cs — StartCoreAsync → StartViaClientAsync'],
+        ['XiansAi.Lib', 'Xians.Lib/Agents/Workflows/SubWorkflowService.cs — StartViaClientAsync, BuildInheritedMemo'],
       ],
       ids: ['requestId', 'processingWorkflowId'],
       data: {
@@ -395,6 +410,7 @@
           workflowId: ID.processingWorkflowId,
           workflowType: 'Xianix AI-DLC Agent:Processing Workflow',
           idConflictPolicy: 'UseExisting',
+          memo: { tenantId: ID.tenant, agent: ID.agent, requestId: ID.requestId },
         },
       },
     },
@@ -408,6 +424,7 @@
         'After the handler returns, the Lib always sends it back — success or error — as a <code>Webhook</code> message with the same request ID.',
         'It goes to the server\'s agent API, not to GitHub directly.',
       ],
+      tagged: 'activity flow (XiansContext request ID)',
       where: [
         ['the-agent', 'TheAgent/Agent/XianixAgent.cs — context.Respond'],
         ['XiansAi.Lib', 'Xians.Lib/Temporal/Workflows/Messaging/MessageActivities.cs — SendWebhookResponseAsync'],
@@ -465,16 +482,21 @@
       title: 'The Processing Workflow prepares the workspace',
       what: [
         'Each step is a Temporal activity, so it is retried and resumable.',
-        'One Docker volume per tenant + repository keeps a clone across runs (<code>xianix-{tenant}-{sha256(repoUrl)[:12]}</code>).',
-        'One shared per-tenant volume keeps installed runtimes (<code>xianix-{tenant}-runtimes</code>).',
+        'The run reads the request ID from its memo. <code>RequestIdInterceptor</code> puts it on every activity it schedules (header <code>xians-request-id</code>), so activity logs are tagged.',
+        'One Docker volume per tenant + repository keeps a clone across runs; one per tenant keeps installed runtimes.',
       ],
+      pr: PRS.tags,
+      tagged: 'workflow memo → activity header xians-request-id',
       where: [
         ['the-agent', 'TheAgent/Workflows/ProcessingWorkflow.cs — ExecuteContainerPipelineAsync'],
         ['the-agent', 'TheAgent/Activities/ContainerActivities.cs — EnsureWorkspaceVolumeAsync, EnsureRuntimeVolumeAsync'],
+        ['XiansAi.Lib', 'Xians.Lib/Temporal/RequestIdInterceptor.cs'],
       ],
-      ids: ['processingWorkflowId'],
+      ids: ['requestId', 'processingWorkflowId'],
       data: {
         workflowId: ID.processingWorkflowId,
+        memo: { requestId: ID.requestId },
+        activityHeaders: { 'xians-request-id': ID.requestId },
         input: { Name: 'Default', ExecutionBlockName: 'github-pull-request-review', Inputs: { 'pr-number': 42 } },
         workspaceVolume: { name: ID.workspaceVolume, labels: { 'xianix.tenant': ID.tenant, 'xianix.repository': 'https://github.com/acme/payments-api.git' } },
         runtimeVolume: ID.runtimeVolume,
@@ -491,12 +513,13 @@
         'Inside, Claude Code installs <code>pr-reviewer</code> and runs <code>/pr-review 42</code>.',
         'The workflow waits for the container and collects its output and cost metrics.',
       ],
+      tagged: 'activity header xians-request-id',
       where: [
         ['the-agent', 'TheAgent/Activities/ContainerActivities.cs — StartContainerAsync, WaitAndCollectOutputAsync'],
         ['the-agent', 'TheAgent/EnvConfig.cs — ExecutorImage'],
         ['plugins-official', 'plugins/pr-reviewer/commands/pr-review.md'],
       ],
-      ids: ['processingWorkflowId', 'containerId'],
+      ids: ['requestId', 'processingWorkflowId', 'containerId'],
       data: {
         image: '99xio/xianix-executor:latest',
         containerId: ID.containerId,
@@ -542,12 +565,13 @@
         'Delivers each <code>raise-events</code> entry (here <code>ai-hub-metrics</code>: an HTTP POST with tokens, cost, model and status). Failures are logged, not fatal.',
         'Waits 2 minutes, then removes the container. The volumes stay for the next run.',
       ],
+      tagged: 'activity header xians-request-id',
       where: [
         ['the-agent', 'TheAgent/Workflows/ProcessingWorkflow.cs — ReportExecutionMetricsAsync, ReportRaiseEventsAsync'],
         ['the-agent', 'TheAgent/Activities/RaiseEventActivities.cs — DeliverRaiseEventAsync'],
         ['the-agent', 'TheAgent/Activities/ContainerActivities.cs — CleanupContainerAsync'],
       ],
-      ids: ['processingWorkflowId'],
+      ids: ['requestId', 'processingWorkflowId'],
       data: {
         raiseEvent: {
           name: 'ai-hub-metrics',
@@ -567,14 +591,17 @@
       what: [
         'Connections → the webhook → Deliveries lists the rows from <code>webhook_incomings</code>, newest first.',
         'Expanding one shows its headers (credentials masked) and payload.',
-        '<b>Logs</b> opens the delivery\'s Processing run when it has logs (agent-studio #174), otherwise the Integrator Workflow and its children.',
+        '<b>Logs</b> opens every log tagged with the delivery\'s request ID — the Integrator step and every run it started — from a minute before it arrived.',
+        'No tagged logs (older Xians.Lib, or no request ID) → the button is disabled and reads <b>No logs</b>. There is no fallback to the shared Integrator Workflow.',
       ],
+      pr: PRS.tags,
       where: [
-        ['agent-studio', 'src/app/(dashboard)/settings/connections/[integrationId]/deliveries/page.tsx'],
         ['agent-studio', 'src/app/(dashboard)/settings/connections/components/delivery-detail.tsx'],
+        ['agent-studio', 'src/app/(dashboard)/settings/connections/utils/deliveries.ts — deliveryLogsHref'],
+        ['agent-studio', 'src/app/api/logs/route.ts — requestId → property=requestId:…'],
         ['XiansAi.Server', 'GET /api/v1/admin/tenants/{tenantId}/webhooks/{integrationId}/incomings[/{id}]'],
       ],
-      ids: ['incomingId', 'requestId', 'processingWorkflowId'],
+      ids: ['incomingId', 'requestId'],
       data: {
         listRow: { id: ID.incomingId, requestId: ID.requestId, receivedAt: '2026-11-10T09:14:03Z', bodyTruncated: false, headersTruncated: false },
         detail: {
@@ -585,7 +612,10 @@
           body: '{"action":"labeled","number":42,…}',
           workflowId: ID.integratorWorkflowId,
         },
-        logsLink: `/settings/logs?workflowId=${encodeURIComponent(ID.processingWorkflowId)}&children=1`,
+        logsButton: 'Logs (found)',
+        logsLink: `/settings/logs?requestId=${ID.requestId}&startDate=2026-11-10T09:13:03.218Z`,
+        serverFilter: `property=requestId:${ID.requestId}`,
+        logsFound: ['Integrator Workflow · 3', 'Processing Workflow · 14'],
       },
     },
   }
@@ -630,7 +660,15 @@
         },
         reply: { data: { endpoint: 'POST /api/agent/conversation/outbound', message: { Type: 'Webhook', RequestId: ID.requestId, Data: { StatusCode: 200, Content: { status: 'ignored', reason: NO_MATCH } } } } },
         answer: { data: { httpResponseToGitHub: { status: 200, body: { status: 'ignored', reason: NO_MATCH } } } },
-        inspect: { data: { listRow: { id: ID.incomingId, requestId: ID.requestId }, logsLink: 'run has no logs → opens the Integrator Workflow instead' } },
+        inspect: {
+          data: {
+            listRow: { id: ID.incomingId, requestId: ID.requestId },
+            logsButton: 'Logs (found)',
+            logsLink: `/settings/logs?requestId=${ID.requestId}&startDate=…`,
+            logsFound: ['Integrator Workflow · 3 (verify, rules: no match, reply)'],
+            note: 'no Processing run, so only the integration step shows',
+          },
+        },
       },
     },
     {
@@ -654,12 +692,19 @@
         },
         reply: { data: { message: { Type: 'Webhook', RequestId: ID.requestId, Data: { StatusCode: 200, Content: { status: 'ignored', reason: 'Webhook could not be verified.' } } } } },
         answer: { data: { httpResponseToGitHub: { status: 200, body: { status: 'ignored', reason: 'Webhook could not be verified.' } } } },
+        inspect: {
+          data: {
+            listRow: { id: ID.incomingId, requestId: ID.requestId },
+            logsButton: 'Logs (found)',
+            logsFound: [{ level: 'Warning', message: 'Webhook verification failed: verification-secret-mismatch', properties: { requestId: ID.requestId } }],
+          },
+        },
       },
     },
     {
       id: 'redelivery',
       name: 'Redelivered from Studio',
-      blurb: 'A developer re-sends a recorded call. PRs #666 / #175 (in review).',
+      blurb: 'A developer re-sends a recorded call. It gets a new delivery, a new request ID and its own run.',
       order: ['redeliver', 'auth', 'endpoint', 'record', 'signal', 'queue', 'verify', 'rules', 'start', 'reply', 'answer', 'volumes', 'container', 'posted', 'finish', 'inspect'],
       edges: [
         ['redeliver', 'auth'], ['auth', 'endpoint'], ['endpoint', 'record'], ['record', 'signal'], ['signal', 'queue'],
@@ -673,7 +718,7 @@
         endpoint: {
           what: [
             'Same checks as a call from GitHub.',
-            'Verifies the <code>X-Xians-Redelivery</code> claim: HMAC, tenant and expiry. An unsigned or forged claim is ignored and the call is recorded as an ordinary delivery.',
+            'Verifies the <code>X-Xians-Redelivery</code> claim: HMAC, tenant and expiry. An unsigned, forged or <b>already used</b> claim is ignored and the call is recorded as an ordinary delivery.',
             'Gets a <b>new</b> request ID, so the redelivery has its own reply and its own Processing run.',
           ],
           data: { workflowId: ID.integratorWorkflowId, requestId: ID.redeliveryRequestId, redeliveryClaim: { verified: true, redeliveryOf: ID.incomingId, deliveryId: ID.redeliveryIncomingId, triggeredBy: 'dev-jane@acme.io' } },
@@ -696,91 +741,44 @@
         start: { data: { uniqueKey: ID.redeliveryRequestId, temporal: { workflowId: ID.redeliveryProcessingWorkflowId, idConflictPolicy: 'UseExisting' }, note: 'a new run — the agent reviews the PR again' } },
         answer: {
           title: 'The server answers its own redelivery call',
+          what: [
+            'The loopback call waits up to the webhook\'s timeout plus a margin.',
+            'Every outcome is audited: <code>answered</code>, <code>timedOut</code>, <code>unreachable</code> or <code>cancelled</code>.',
+            'A timeout or server error means the call <b>may</b> have been sent: Studio says it could not confirm and refreshes the list.',
+          ],
           data: {
             httpResponse: { status: 200, body: { status: 'success', matchCount: 1 } },
+            audit: { outcome: 'answered', statusCode: 200, redeliveryOf: ID.incomingId, deliveryId: ID.redeliveryIncomingId },
             adminApiResult: { deliveryId: ID.redeliveryIncomingId, redeliveryOf: ID.incomingId, statusCode: 200, durationMs: 1380 },
             studioToast: 'Redelivered · answered 200 in 1.4 s',
           },
+          where: [
+            ['XiansAi.Server', 'Shared/Services/WebhookRedeliveryService.cs — SendAsync, AuditAsync'],
+            ['agent-studio', 'src/app/(dashboard)/settings/connections/hooks/use-webhook-deliveries.ts — RedeliveryError.outcomeUnknown'],
+          ],
         },
-        volumes: { data: { workflowId: ID.redeliveryProcessingWorkflowId, workspaceVolume: ID.workspaceVolume + ' (reused)', runtimeVolume: ID.runtimeVolume } },
-        inspect: { data: { newRow: { id: ID.redeliveryIncomingId, label: ID.requestId, badge: 'Redelivery', triggeredBy: 'dev-jane@acme.io' }, original: { id: ID.incomingId, unchanged: true } } },
+        volumes: { data: { workflowId: ID.redeliveryProcessingWorkflowId, memo: { requestId: ID.redeliveryRequestId }, workspaceVolume: ID.workspaceVolume + ' (reused)', runtimeVolume: ID.runtimeVolume } },
+        inspect: {
+          data: {
+            newRow: { id: ID.redeliveryIncomingId, requestId: ID.redeliveryRequestId, badge: 'Redelivery', redeliveryOf: ID.incomingId, triggeredBy: 'dev-jane@acme.io' },
+            original: { id: ID.incomingId, unchanged: true },
+            logsLink: `/settings/logs?requestId=${ID.redeliveryRequestId}&startDate=…`,
+            note: 'each row\'s Logs shows only its own request\'s logs',
+          },
+        },
       },
-    },
-  ]
-
-  /** Every workflow the Xianix agent defines, and its part in the webhook flow. */
-  const workflows = [
-    {
-      name: 'Integrator Workflow',
-      kind: 'Builtin (XiansAi.Lib BuiltinWorkflow)',
-      inFlow: 'Receives every delivery',
-      startedBy: 'XiansAi.Server — signal-with-start on each call',
-      id: '{tenant}:{agent}:Integrator Workflow:{activation} — fixed, one per activation',
-      lifetime: 'Long-lived queue; continues-as-new when history grows',
-      does: 'Queues each message and runs the agent\'s OnWebhook handler in an activity, which replies and starts Processing runs.',
-      code: 'XiansAi.Lib · Temporal/Workflows/BuiltinWorkflow.cs; the-agent · XianixAgent.ConfigureWebhookWorkflow',
-    },
-    {
-      name: 'Processing Workflow',
-      kind: 'Custom (the-agent)',
-      inFlow: 'One per matched rule',
-      startedBy: 'Agent webhook handler (client start, UseExisting) — and JobDispatcher for schedules',
-      id: '{tenant}:{agent}:Processing Workflow:{activation}:{requestId}[-n] (the-agent #106; random GUID before)',
-      lifetime: 'Minutes; ends after cleanup',
-      does: 'Volumes → executor container (Claude Code + plugin) → output, metrics, raise-events → cleanup.',
-      code: 'the-agent · Workflows/ProcessingWorkflow.cs, Activities/ContainerActivities.cs',
-    },
-    {
-      name: 'CognitiveDispatcher Workflow',
-      kind: 'Custom, activable',
-      inFlow: 'Not in the webhook path',
-      startedBy: 'Activation of the agent',
-      id: 'per activation',
-      lifetime: 'Short',
-      does: 'Reads the schedule rules and creates a Temporal schedule for each (CreateIfNotExists).',
-      code: 'the-agent · Workflows/CognitiveDispatcher.cs',
-    },
-    {
-      name: 'JobDispatcher Workflow',
-      kind: 'Custom (scheduled)',
-      inFlow: 'Parallel path: schedules instead of webhooks',
-      startedBy: 'Temporal schedule (cron) created by CognitiveDispatcher',
-      id: 'schedule run',
-      lifetime: 'Short',
-      does: 'Builds a ProcessingRequest of type Schedule for each execution and starts a Processing Workflow (random key).',
-      code: 'the-agent · Workflows/JobDispatcherWorkflow.cs',
-    },
-    {
-      name: 'OnboardRepository Workflow',
-      kind: 'Custom',
-      inFlow: 'Not in the webhook path',
-      startedBy: 'A chat tool (fire-and-forget)',
-      id: 'sub-workflow',
-      lifetime: 'Short',
-      does: 'Runs the executor in prepare mode to bare-clone a repo into the tenant volume, so the first review is fast.',
-      code: 'the-agent · Workflows/OnboardRepositoryWorkflow.cs',
-    },
-    {
-      name: 'ClaudeCodeChat Workflow',
-      kind: 'Custom',
-      inFlow: 'Not in the webhook path',
-      startedBy: 'A chat tool (fire-and-forget)',
-      id: 'sub-workflow',
-      lifetime: 'Minutes',
-      does: 'Same container pipeline with a free-form prompt and no plugins; streams progress back to the chat.',
-      code: 'the-agent · Workflows/ClaudeCodeChatWorkflow.cs',
     },
   ]
 
   /** How each identifier is born and where it travels. */
   const idTrace = [
     { key: 'githubDelivery', name: 'X-GitHub-Delivery', born: 'GitHub', travels: 'Header only. Stored with the other headers; not used for routing.' },
-    { key: 'requestId', name: 'Request ID', born: 'Server endpoint (new GUID per call)', travels: 'Signal payload → webhook context → reply → pending request; recorded row; Processing run ID.' },
+    { key: 'requestId', name: 'Request ID', born: 'Server endpoint (new GUID per call)', travels: 'Signal → webhook context → reply; recorded row; Processing run ID and memo; every log (properties.requestId).' },
     { key: 'incomingId', name: 'Delivery ID', born: 'Server, when recording (UUID v7)', travels: 'webhook_incomings._id; Studio row; redelivery link.' },
     { key: 'integratorWorkflowId', name: 'Integrator workflow ID', born: 'Server endpoint', travels: 'Fixed per activation; every delivery shares it.' },
-    { key: 'processingWorkflowId', name: 'Processing workflow ID', born: 'Agent handler', travels: 'Temporal run; Studio Logs link (when it has logs).' },
+    { key: 'processingWorkflowId', name: 'Processing workflow ID', born: 'Agent handler', travels: 'Temporal run; ends with the request ID.' },
     { key: 'containerId', name: 'Container ID', born: 'Docker, in StartContainerAsync', travels: 'Processing activities only; removed after 2 min.' },
   ]
 
-  window.FLOW = { ID, lanes, steps, scenarios, workflows, idTrace }
+  window.FLOW = { ID, lanes, steps, scenarios, idTrace, PRS }
 })()
