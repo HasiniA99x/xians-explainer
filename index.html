@@ -4,18 +4,35 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Xians Webhook Flow</title>
-  <meta name="description" content="Step-by-step walkthrough of a GitHub webhook through XiansAi.Server, Temporal and the Xianix agent, with the data at every step." />
+  <meta name="description" content="Step-by-step walkthrough of a GitHub webhook through XiansAi.Server, Temporal and the Xianix agent: the data at every step, how one request ID finds every log, and how a delivery is redelivered." />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <!-- A luggage tag: marks logs that carry the delivery's request ID. -->
+      <symbol id="i-tag" viewBox="0 0 16 16">
+        <path d="M1.5 8 L5.5 3 H13 a1.5 1.5 0 0 1 1.5 1.5 v7 A1.5 1.5 0 0 1 13 13 H5.5 Z" fill="currentColor" />
+        <circle cx="6" cy="8" r="1.4" fill="var(--surface)" />
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 16 16"><path d="M3.5 8.5 6.5 11.5 12.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+      <symbol id="i-clock" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="M8 5v3.2l2.2 1.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></symbol>
+      <symbol id="i-block" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="M4.2 11.8 11.8 4.2" stroke="currentColor" stroke-width="1.8" /></symbol>
+      <symbol id="i-lock" viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5" fill="currentColor" /><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7" fill="none" stroke="currentColor" stroke-width="1.8" /></symbol>
+      <symbol id="i-replay" viewBox="0 0 16 16"><path d="M3 8a5 5 0 1 0 1.6-3.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /><path d="M3 2.5v3h3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+      <symbol id="i-spin" viewBox="0 0 16 16"><path d="M8 2.5a5.5 5.5 0 1 1-5.5 5.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></symbol>
+      <symbol id="i-logs" viewBox="0 0 16 16"><path d="M4 3.5h8M4 6.5h8M4 9.5h8M4 12.5h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></symbol>
+      <marker id="fig-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" style="fill: var(--edge-call)" /></marker>
+      <marker id="fig-arrow-return" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" style="fill: var(--edge-return)" /></marker>
+      <marker id="fig-arrow-async" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" style="fill: var(--edge-async)" /></marker>
+    </defs>
+  </svg>
+
   <header class="top">
     <div class="wrap">
       <p class="eyebrow">Xians · builtin webhooks</p>
       <h1>How a GitHub webhook travels through Xians</h1>
-      <p class="lede">
-        Follow one pull-request event from GitHub to a posted review. Every step is a debug point:
-        select it to see the data that exists right there, which IDs are known, and the code that runs.
-      </p>
+      <p class="lede">One pull-request event, from GitHub to a posted review. Select any step to see the data there.</p>
       <nav class="scenarios" role="tablist" aria-label="Scenario" id="scenarios"></nav>
       <p class="scenario-blurb" id="scenario-blurb"></p>
     </div>
@@ -31,6 +48,7 @@
           <span><i class="ln ln-read"></i>reads later</span>
           <span><i class="ln ln-return"></i>answer returns</span>
           <span><i class="bp"></i>debug point</span>
+          <span><svg class="ico tag-ico"><use href="#i-tag" /></svg>logs carry the request ID</span>
         </div>
       </div>
       <div class="diagram-frame">
@@ -47,34 +65,207 @@
         <span class="counter" id="counter"></span>
       </div>
       <p class="hint">Keys: <kbd>←</kbd> <kbd>→</kbd> step · <kbd>Space</kbd> play/pause</p>
+
+      <div class="idgrid-head">
+        <h2>Which IDs exist at each step</h2>
+        <span class="muted-sm">Follows the flow above · select a column to jump there</span>
+      </div>
+      <div class="diagram-frame idgrid-frame">
+        <div class="diagram-scroll" id="idgrid-scroll">
+          <svg id="idgrid" role="img" aria-label="Grid of the identifiers known at each step"></svg>
+        </div>
+      </div>
     </section>
 
     <aside class="card panel" id="panel" aria-live="polite"></aside>
   </main>
 
-  <section class="wrap section">
-    <h2>All the workflows</h2>
-    <p class="section-lede">
-      Two workflows carry a webhook: the server-triggered <b>Integrator Workflow</b> and the agent-started
-      <b>Processing Workflow</b>. The agent defines four more; here is where each fits.
-    </p>
-    <div class="wf-grid" id="workflows"></div>
+  <!-- ── One request ID, every log ─────────────────────────────────────────── -->
+  <section class="wrap section" aria-labelledby="tags-title">
+    <h2 id="tags-title"><svg class="ico tag-ico h-ico"><use href="#i-tag" /></svg>One request ID finds every log <span class="pr-chip">PR</span></h2>
+    <p class="section-lede">Xians.Lib writes the delivery's request ID on every log it handles, across every workflow and activity it reaches.</p>
+
+    <div class="card fig-card">
+      <div class="fig-scroll">
+        <svg class="fig" viewBox="0 0 1120 360" role="img" aria-label="The request ID is born at the server, carried into the Integrator Workflow, the webhook handler, the Processing Workflow and its activities, written on every log, and used by Agent Studio to find them.">
+          <!-- server -->
+          <g>
+            <rect class="fig-box" x="16" y="140" width="176" height="120" rx="10" />
+            <rect x="16" y="140" width="176" height="5" rx="2" style="fill: var(--lane-server)" />
+            <text class="fig-title" x="32" y="172">XiansAi.Server</text>
+            <text class="fig-sub" x="32" y="190">endpoint · new GUID per call</text>
+            <rect class="fig-pill" x="30" y="208" width="148" height="30" rx="15" />
+            <text class="fig-mono fig-accent" x="104" y="228" text-anchor="middle">3f9a6c2e-41d8…</text>
+          </g>
+          <path class="fig-edge" d="M 192 200 C 222 200, 220 55, 248 55" marker-end="url(#fig-arrow)" />
+          <text class="fig-label" x="104" y="282" text-anchor="middle">signal-with-start ↗</text>
+
+          <!-- carriers -->
+          <g>
+            <rect class="fig-box" x="252" y="20" width="330" height="70" rx="10" />
+            <rect x="252" y="20" width="5" height="70" rx="2" style="fill: var(--lane-integrator)" />
+            <text class="fig-title" x="272" y="47">Integrator Workflow</text>
+            <use href="#i-tag" x="272" y="58" width="14" height="14" class="fig-accent-fill" />
+            <text class="fig-mono" x="292" y="70"><tspan class="fig-accent">scope</tspan> · BeginRequestIdScope</text>
+
+            <path class="fig-edge" d="M 290 92 V 113" marker-end="url(#fig-arrow)" />
+            <text class="fig-label" x="300" y="107">runs the handler in an activity</text>
+
+            <rect class="fig-box" x="252" y="115" width="330" height="70" rx="10" />
+            <rect x="252" y="115" width="5" height="70" rx="2" style="fill: var(--lane-handler)" />
+            <text class="fig-title" x="272" y="142">Webhook handler</text>
+            <use href="#i-tag" x="272" y="153" width="14" height="14" class="fig-accent-fill" />
+            <text class="fig-mono" x="292" y="165"><tspan class="fig-accent">async flow</tspan> · XiansContext request ID</text>
+
+            <path class="fig-edge async" d="M 290 187 V 208" marker-end="url(#fig-arrow-async)" />
+            <text class="fig-label" x="300" y="202">StartAsync → copies it into the memo</text>
+
+            <rect class="fig-box" x="252" y="210" width="330" height="70" rx="10" />
+            <rect x="252" y="210" width="5" height="70" rx="2" style="fill: var(--lane-processing)" />
+            <text class="fig-title" x="272" y="237">Processing Workflow</text>
+            <use href="#i-tag" x="272" y="248" width="14" height="14" class="fig-accent-fill" />
+            <text class="fig-mono" x="292" y="260"><tspan class="fig-accent">memo</tspan> · requestId</text>
+
+            <path class="fig-edge" d="M 290 282 V 303" marker-end="url(#fig-arrow)" />
+            <text class="fig-label" x="300" y="297">schedules activities</text>
+
+            <rect class="fig-box" x="252" y="305" width="330" height="50" rx="10" />
+            <rect x="252" y="305" width="5" height="50" rx="2" style="fill: var(--lane-processing)" />
+            <text class="fig-title" x="272" y="326">Its activities</text>
+            <use href="#i-tag" x="272" y="333" width="14" height="14" class="fig-accent-fill" />
+            <text class="fig-mono" x="292" y="345"><tspan class="fig-accent">header</tspan> · xians-request-id</text>
+          </g>
+
+          <!-- carriers → log rows -->
+          <g class="fig-links">
+            <path d="M 582 55 C 620 55, 620 70, 658 70" />
+            <path d="M 582 150 C 620 150, 620 120, 658 120" />
+            <path d="M 582 150 C 620 150, 620 170, 658 170" />
+            <path d="M 582 245 C 620 245, 620 220, 658 220" />
+            <path d="M 582 330 C 620 330, 620 270, 658 270" />
+            <path d="M 582 330 C 620 330, 620 320, 658 320" />
+          </g>
+
+          <!-- logs -->
+          <text class="fig-title" x="660" y="30">Logs</text>
+          <text class="fig-sub" x="702" y="30">every row tagged</text>
+          <g id="fig-logs"></g>
+
+          <!-- studio -->
+          <path class="fig-edge" d="M 892 195 H 948" marker-end="url(#fig-arrow)" />
+          <g>
+            <rect class="fig-box" x="952" y="96" width="156" height="210" rx="10" />
+            <rect x="952" y="96" width="156" height="5" rx="2" style="fill: var(--lane-studio)" />
+            <text class="fig-title" x="966" y="126">Agent Studio</text>
+            <text class="fig-sub" x="966" y="143">Deliveries → row</text>
+            <rect class="fig-btn" x="966" y="154" width="84" height="28" rx="6" />
+            <use href="#i-logs" x="974" y="161" width="14" height="14" class="fig-text-fill" />
+            <text class="fig-btn-text" x="994" y="173">Logs</text>
+            <text class="fig-mono fig-small" x="966" y="206">/settings/logs</text>
+            <text class="fig-mono fig-small fig-accent" x="966" y="221">?requestId=3f9a…</text>
+            <text class="fig-mono fig-small" x="966" y="236">&amp;startDate=−1 min</text>
+            <line class="fig-rule" x1="966" y1="250" x2="1094" y2="250" />
+            <text class="fig-sub" x="966" y="268">server filter</text>
+            <text class="fig-mono fig-small" x="966" y="285">property=</text>
+            <text class="fig-mono fig-small fig-accent" x="966" y="299">requestId:3f9a…</text>
+          </g>
+        </svg>
+      </div>
+
+      <div class="states" aria-label="States of the Logs button">
+        <div class="state">
+          <span class="mock-btn"><svg class="ico"><use href="#i-logs" /></svg>Logs</span>
+          <span class="state-cap"><b>Found</b> tagged logs</span>
+        </div>
+        <div class="state">
+          <span class="mock-btn is-disabled"><svg class="ico spin"><use href="#i-spin" /></svg>Logs</span>
+          <span class="state-cap"><b>Looking</b> while it checks</span>
+        </div>
+        <div class="state">
+          <span class="mock-btn is-disabled"><svg class="ico"><use href="#i-logs" /></svg>No logs</span>
+          <span class="state-cap"><b>None</b> older Xians.Lib or no request ID</span>
+        </div>
+        <div class="state">
+          <span class="mock-chip struck">Integrator Workflow</span>
+          <span class="state-cap"><b>No fallback</b> shared by every delivery</span>
+        </div>
+      </div>
+    </div>
   </section>
 
-  <section class="wrap section">
-    <h2>Identifiers along the way</h2>
-    <p class="section-lede">The request ID is the thread that ties the HTTP call, the recorded delivery, the reply and the review run together.</p>
-    <div class="table-scroll">
-      <table class="ids" id="idtrace">
-        <thead><tr><th>ID</th><th>Sample</th><th>Born at</th><th>Travels through</th></tr></thead>
-        <tbody></tbody>
-      </table>
+  <!-- ── Redeliver ─────────────────────────────────────────────────────────── -->
+  <section class="wrap section" aria-labelledby="redeliver-title">
+    <div class="section-head">
+      <h2 id="redeliver-title"><svg class="ico h-ico" style="color: var(--lane-studio)"><use href="#i-replay" /></svg>Redeliver a recorded call <span class="pr-chip">PR</span></h2>
+      <button type="button" class="btn btn-primary" id="play-redelivery">▶ Step through it</button>
+    </div>
+    <p class="section-lede">The server sends the stored call to itself, so everything runs again under a new request ID.</p>
+
+    <div class="card fig-card">
+      <div class="fig-scroll">
+        <svg class="fig" viewBox="0 0 1120 250" role="img" aria-label="Agent Studio, Admin API capability check, signed one-use claim, POST to the webhook's own URL, the normal path, and a new run with its own request ID; the answer returns to Studio.">
+          <g id="fig-redeliver"></g>
+        </svg>
+      </div>
+
+      <div class="redeliver-bottom">
+        <div class="mock-list" aria-label="Deliveries list after a redelivery">
+          <div class="mock-list-head"><span>Deliveries</span><span class="muted-sm">Default · newest first</span></div>
+          <div class="mock-row is-new">
+            <span class="badge-redeliver"><svg class="ico"><use href="#i-replay" /></svg>Redelivery</span>
+            <span class="mono req">b71e0d4c…</span>
+            <span class="link-of">of <span class="mono">3f9a6c2e…</span></span>
+            <span class="who">dev-jane</span>
+            <span class="code-ok">200</span>
+            <span class="mock-btn sm"><svg class="ico"><use href="#i-logs" /></svg>Logs</span>
+          </div>
+          <div class="mock-row">
+            <span class="badge-plain">GitHub</span>
+            <span class="mono req">3f9a6c2e…</span>
+            <span class="link-of">original · unchanged</span>
+            <span class="who"></span>
+            <span class="code-ok">200</span>
+            <span class="mock-btn sm"><svg class="ico"><use href="#i-logs" /></svg>Logs</span>
+          </div>
+          <p class="mock-foot">Each row's Logs shows only its own request's logs.</p>
+        </div>
+
+        <div class="outcomes" aria-label="Redelivery outcomes">
+          <div class="outcome ok">
+            <span class="o-ico"><svg class="ico"><use href="#i-check" /></svg></span>
+            <span class="o-title">Answered</span><span class="o-code">2xx–4xx</span>
+            <span class="toast">Redelivered · answered 200 in 1.4 s</span>
+          </div>
+          <div class="outcome warn">
+            <span class="o-ico"><svg class="ico"><use href="#i-clock" /></svg></span>
+            <span class="o-title">Unconfirmed</span><span class="o-code">408 · 5xx · no answer</span>
+            <span class="toast">Could not confirm the redelivery</span>
+            <span class="o-cap">may have been sent · list refreshes</span>
+          </div>
+          <div class="outcome stop">
+            <span class="o-ico"><svg class="ico"><use href="#i-block" /></svg></span>
+            <span class="o-title">Already in flight</span><span class="o-code">409</span>
+            <span class="o-cap">nothing sent</span>
+          </div>
+          <div class="outcome stop">
+            <span class="o-ico"><svg class="ico"><use href="#i-lock" /></svg></span>
+            <span class="o-title">Not allowed</span><span class="o-code">403</span>
+            <span class="o-cap">no webhooks:redeliver · nothing sent</span>
+          </div>
+          <div class="outcome info">
+            <span class="o-ico"><svg class="ico"><use href="#i-replay" /></svg></span>
+            <span class="o-title">Claim reused</span><span class="o-code">replay</span>
+            <span class="o-cap">recorded as an ordinary delivery</span>
+          </div>
+          <p class="audit">Audited every time: <code>answered</code> <code>timedOut</code> <code>unreachable</code> <code>cancelled</code></p>
+        </div>
+      </div>
     </div>
   </section>
 
   <footer class="wrap foot">
     Traced from XiansAi.Server, XiansAi.Lib, the-agent and agent-studio. Sample values are invented; their shapes match the code.
-    Steps marked <span class="pr-chip">PR</span> come from open pull requests, not main.
+    Parts marked <span class="pr-chip">PR</span> come from open pull requests, not main.
   </footer>
 
   <script src="flow-data.js"></script>
