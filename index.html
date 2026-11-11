@@ -11,15 +11,13 @@
   <main class="wrap">
     <header class="top">
       <h1>How a GitHub webhook flows through Xians</h1>
-      <p class="lede">Click a step. <span class="req-chip demo">req</span> = the delivery's request ID is there.</p>
+      <p class="lede">Pick a workflow, then click a step. <span class="req-chip demo">req</span> = the delivery's request ID is there.</p>
     </header>
 
-    <ol class="flow" id="flow" aria-label="Webhook flow"></ol>
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Workflow"></nav>
+    <p class="blurb" id="blurb"></p>
 
-    <button type="button" class="loop" id="loop" aria-label="Redeliver: back to step 2">
-      <span class="loop-ico" aria-hidden="true">↺</span>
-      <span><b>Redeliver</b> from Agent Studio → back to <b>step 2</b> with a new request ID</span>
-    </button>
+    <ol class="flow" id="flow" aria-label="Webhook flow"></ol>
 
     <div class="controls">
       <button type="button" class="btn" id="prev" aria-label="Previous step">◀</button>

@@ -1,12 +1,17 @@
 # Xians webhook flow explainer
 
-One page, one flow: a GitHub pull-request webhook through Xians in nine steps, from a labelled PR to a posted review, plus **Redeliver** from Agent Studio.
+One page with two workflows, picked from the tabs:
+
+| Tab | What it shows |
+|-----|---------------|
+| GitHub trigger | A labelled PR goes through Xians in nine steps and gets an AI review. |
+| Redeliver | A saved call is re-sent from Agent Studio and runs again under a new request ID. |
 
 - Click a step (or press **Play**, or use **←/→**) to see what happens there in two or three lines.
 - **req** on a step means the delivery's request ID has reached it. That ID is what Studio uses to find all of the delivery's logs.
 - **Show data** has a sample of the data at that step.
 
-The URL keeps the selected step (`index.html#agent`), so you can link to it.
+The URL keeps the tab and step (`index.html#redeliver/admin`), so you can link to it.
 
 ## Run it
 
@@ -16,8 +21,8 @@ No dependencies and no build step: open `index.html` in a browser.
 
 | File | Purpose |
 |------|---------|
-| `flow-data.js` | The nine steps and redelivery: names, short lines, IDs and sample data. Edit this to change the content. |
-| `app.js` | Draws the flow and the detail card; playback and keyboard controls. |
+| `flow-data.js` | The workflows and their steps: names, short lines, IDs and sample data. Edit this to change the content. |
+| `app.js` | Draws the tabs, the flow and the detail card; playback and keyboard controls. |
 | `styles.css` | Light and dark themes (follows the OS setting). |
 
 ## Sources
