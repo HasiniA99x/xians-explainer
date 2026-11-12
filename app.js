@@ -7,9 +7,8 @@
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
   const short = id => id.slice(0, 8) + '…'
 
-  const llmChip = s => s.llm === 'optional'
-    ? '<span class="llm-chip optional">LLM · optional</span>'
-    : s.llm ? '<span class="llm-chip">LLM</span>' : ''
+  const llmChip = s => s.llm ? '<span class="llm-chip">LLM · $</span>'
+    : s.free ? '<span class="free-chip">no LLM · free</span>' : ''
 
   function renderTabs() {
     $('#tabs').innerHTML = F.workflows
