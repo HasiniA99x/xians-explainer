@@ -26,6 +26,193 @@
     </div>
 
     <section class="card detail" id="detail" aria-live="polite"></section>
+
+    <!-- Shown only on the PR review tab -->
+    <div class="extras" data-wf="prreview" hidden>
+      <section class="card figure">
+        <h3>1 · Comments on the PR</h3>
+        <p class="cap"><span class="llm-chip">LLM · $</span> Claude's turns cost tokens. Scripts and GitHub calls are free.</p>
+        <div class="scroll">
+          <svg class="diagram" viewBox="0 0 1000 540" role="img" aria-label="Sequence of calls: Claude runs plugin scripts, which call the GitHub API, which shows comments on the PR: review in progress, summary, resolved, reopened, and inline findings.">
+            <defs>
+              <marker id="ah1" viewBox="0 0 8 8" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-head" d="M0,0 L8,4 L0,8 z" /></marker>
+            </defs>
+
+            <!-- lane headers -->
+            <rect class="d-llm" x="40" y="10" width="180" height="48" rx="10" />
+            <text class="d-t" x="130" y="31" text-anchor="middle">Claude (lead)</text>
+            <text class="d-tag d-llm-t" x="130" y="48" text-anchor="middle">LLM · $</text>
+            <rect class="d-head-box" x="300" y="10" width="180" height="48" rx="10" />
+            <text class="d-t" x="390" y="31" text-anchor="middle">PR plugin scripts</text>
+            <text class="d-tag" x="390" y="48" text-anchor="middle">free</text>
+            <rect class="d-head-box" x="560" y="10" width="180" height="48" rx="10" />
+            <text class="d-t" x="650" y="31" text-anchor="middle">GitHub API</text>
+            <text class="d-tag" x="650" y="48" text-anchor="middle">free</text>
+            <rect class="d-head-box" x="792" y="10" width="176" height="48" rx="10" />
+            <text class="d-t" x="880" y="31" text-anchor="middle">PR #42</text>
+            <text class="d-tag" x="880" y="48" text-anchor="middle">what people see</text>
+
+            <!-- lifelines -->
+            <line class="d-life" x1="130" y1="58" x2="130" y2="530" />
+            <line class="d-life" x1="390" y1="58" x2="390" y2="530" />
+            <line class="d-life" x1="650" y1="58" x2="650" y2="530" />
+            <line class="d-life" x1="880" y1="58" x2="880" y2="530" />
+
+            <!-- 1 permissions -->
+            <circle class="d-step" cx="20" cy="96" r="11" /><text class="d-step-t" x="20" y="100" text-anchor="middle">1</text>
+            <line class="d-arrow" x1="132" y1="96" x2="386" y2="96" marker-end="url(#ah1)" />
+            <text class="d-s" x="260" y="88" text-anchor="middle">check-permissions.sh</text>
+            <line class="d-arrow" x1="392" y1="96" x2="646" y2="96" marker-end="url(#ah1)" />
+            <text class="d-s" x="520" y="88" text-anchor="middle">read user, repo</text>
+
+            <!-- 2 start comment -->
+            <circle class="d-step" cx="20" cy="146" r="11" /><text class="d-step-t" x="20" y="150" text-anchor="middle">2</text>
+            <line class="d-arrow" x1="132" y1="146" x2="386" y2="146" marker-end="url(#ah1)" />
+            <text class="d-s" x="260" y="138" text-anchor="middle">gh-start-comment.sh</text>
+            <line class="d-arrow" x1="392" y1="146" x2="646" y2="146" marker-end="url(#ah1)" />
+            <text class="d-s" x="520" y="138" text-anchor="middle">gh pr comment</text>
+            <line class="d-arrow" x1="652" y1="146" x2="788" y2="146" marker-end="url(#ah1)" />
+            <rect class="d-bubble" x="792" y="131" width="176" height="30" rx="15" />
+            <text class="d-t" x="880" y="151" text-anchor="middle">🔍 Review in progress</text>
+
+            <!-- 3 detect prior -->
+            <circle class="d-step" cx="20" cy="196" r="11" /><text class="d-step-t" x="20" y="200" text-anchor="middle">3</text>
+            <line class="d-arrow" x1="132" y1="196" x2="386" y2="196" marker-end="url(#ah1)" />
+            <text class="d-s" x="260" y="188" text-anchor="middle">gh-detect-prior.sh</text>
+            <line class="d-arrow" x1="392" y1="196" x2="646" y2="196" marker-end="url(#ah1)" />
+            <text class="d-s" x="520" y="188" text-anchor="middle">GraphQL: old threads</text>
+            <line class="d-arrow d-ret" x1="648" y1="220" x2="134" y2="220" marker-end="url(#ah1)" />
+            <text class="d-s" x="520" y="236" text-anchor="middle">first review or re-review?</text>
+
+            <!-- 4 LLM review -->
+            <circle class="d-step" cx="20" cy="276" r="11" /><text class="d-step-t" x="20" y="280" text-anchor="middle">4</text>
+            <rect class="d-llm" x="40" y="256" width="180" height="40" rx="8" />
+            <text class="d-t" x="130" y="281" text-anchor="middle">Sub-agents review</text>
+            <text class="d-tag d-llm-t" x="232" y="281">LLM · $ (most of the cost)</text>
+
+            <!-- 5 summary -->
+            <circle class="d-step" cx="20" cy="336" r="11" /><text class="d-step-t" x="20" y="340" text-anchor="middle">5</text>
+            <line class="d-arrow" x1="132" y1="336" x2="386" y2="336" marker-end="url(#ah1)" />
+            <text class="d-s" x="260" y="328" text-anchor="middle">gh-post-review.sh</text>
+            <line class="d-arrow" x1="392" y1="336" x2="646" y2="336" marker-end="url(#ah1)" />
+            <text class="d-s" x="520" y="328" text-anchor="middle">gh pr review</text>
+            <line class="d-arrow" x1="652" y1="336" x2="788" y2="336" marker-end="url(#ah1)" />
+            <rect class="d-bubble" x="792" y="321" width="176" height="30" rx="15" />
+            <text class="d-t" x="880" y="341" text-anchor="middle">📝 Summary + verdict</text>
+
+            <!-- 6 resolve -->
+            <circle class="d-step" cx="20" cy="386" r="11" /><text class="d-step-t" x="20" y="390" text-anchor="middle">6</text>
+            <text class="d-tag" x="376" y="390" text-anchor="end">re-review only</text>
+            <line class="d-arrow" x1="392" y1="386" x2="646" y2="386" marker-end="url(#ah1)" />
+            <text class="d-s" x="520" y="378" text-anchor="middle">reply + resolve thread</text>
+            <line class="d-arrow" x1="652" y1="386" x2="788" y2="386" marker-end="url(#ah1)" />
+            <rect class="d-bubble" x="792" y="371" width="176" height="30" rx="15" />
+            <text class="d-t" x="880" y="391" text-anchor="middle">✅ Old finding fixed</text>
+
+            <!-- 7 reopen -->
+            <circle class="d-step" cx="20" cy="436" r="11" /><text class="d-step-t" x="20" y="440" text-anchor="middle">7</text>
+            <text class="d-tag" x="376" y="440" text-anchor="end">re-review only</text>
+            <line class="d-arrow" x1="392" y1="436" x2="646" y2="436" marker-end="url(#ah1)" />
+            <text class="d-s" x="520" y="428" text-anchor="middle">reply + unresolve thread</text>
+            <line class="d-arrow" x1="652" y1="436" x2="788" y2="436" marker-end="url(#ah1)" />
+            <rect class="d-bubble" x="792" y="421" width="176" height="30" rx="15" />
+            <text class="d-t" x="880" y="441" text-anchor="middle">↩ Finding reopened</text>
+
+            <!-- 8 inline -->
+            <circle class="d-step" cx="20" cy="486" r="11" /><text class="d-step-t" x="20" y="490" text-anchor="middle">8</text>
+            <line class="d-arrow" x1="392" y1="486" x2="646" y2="486" marker-end="url(#ah1)" />
+            <text class="d-s" x="520" y="478" text-anchor="middle">POST pulls/42/comments ×N</text>
+            <line class="d-arrow" x1="652" y1="486" x2="788" y2="486" marker-end="url(#ah1)" />
+            <rect class="d-bubble" x="792" y="471" width="176" height="30" rx="15" />
+            <text class="d-t" x="880" y="491" text-anchor="middle">💬 Inline finding ×N</text>
+          </svg>
+        </div>
+      </section>
+
+      <section class="card figure">
+        <h3>2 · When AI credit runs low</h3>
+        <p class="cap">An API key can't read its balance. Running out only shows up as a failed model call.</p>
+        <div class="scroll">
+          <svg class="diagram" viewBox="0 0 1000 470" role="img" aria-label="Today: if credit is out, Claude's first call fails and nothing is posted; if it runs out mid-review, only the in-progress comment stays. With the proposed fix: the Agent checks a tenant budget for free and the Executor makes a tiny credit check, and posts a skipped comment instead of running the review.">
+            <defs>
+              <marker id="ah2" viewBox="0 0 8 8" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-head" d="M0,0 L8,4 L0,8 z" /></marker>
+            </defs>
+
+            <!-- Today -->
+            <text class="d-band" x="20" y="26">Today</text>
+            <text class="d-tag" x="78" y="26">credit already out</text>
+            <rect class="d-box" x="20" y="72" width="150" height="44" rx="8" />
+            <text class="d-t" x="95" y="91" text-anchor="middle">Agent</text>
+            <text class="d-s" x="95" y="107" text-anchor="middle">rule matched</text>
+            <line class="d-arrow" x1="170" y1="94" x2="206" y2="94" marker-end="url(#ah2)" />
+            <rect class="d-box" x="210" y="72" width="150" height="44" rx="8" />
+            <text class="d-t" x="285" y="91" text-anchor="middle">Executor</text>
+            <text class="d-s" x="285" y="107" text-anchor="middle">harness ready</text>
+            <line class="d-arrow" x1="360" y1="94" x2="396" y2="94" marker-end="url(#ah2)" />
+            <rect class="d-bad" x="400" y="72" width="170" height="44" rx="8" />
+            <text class="d-t" x="485" y="91" text-anchor="middle">Claude · 1st call</text>
+            <text class="d-s d-bad-t" x="485" y="107" text-anchor="middle">✖ credit too low</text>
+            <line class="d-arrow" x1="570" y1="88" x2="636" y2="70" marker-end="url(#ah2)" />
+            <line class="d-arrow" x1="570" y1="100" x2="636" y2="120" marker-end="url(#ah2)" />
+            <rect class="d-box" x="640" y="50" width="200" height="40" rx="8" />
+            <text class="d-t" x="740" y="75" text-anchor="middle">PR: nothing posted 🚫</text>
+            <rect class="d-box" x="640" y="100" width="200" height="40" rx="8" />
+            <text class="d-t" x="740" y="125" text-anchor="middle">Studio Logs: Failed</text>
+
+            <text class="d-tag" x="20" y="170">credit runs out mid-review</text>
+            <rect class="d-bubble" x="20" y="182" width="200" height="40" rx="20" />
+            <text class="d-t" x="120" y="207" text-anchor="middle">🔍 Review in progress</text>
+            <line class="d-arrow" x1="220" y1="202" x2="256" y2="202" marker-end="url(#ah2)" />
+            <rect class="d-bad" x="260" y="182" width="200" height="40" rx="8" />
+            <text class="d-t d-bad-t" x="360" y="207" text-anchor="middle">✖ review stops</text>
+            <line class="d-arrow" x1="460" y1="202" x2="496" y2="202" marker-end="url(#ah2)" />
+            <rect class="d-box" x="500" y="182" width="240" height="40" rx="8" />
+            <text class="d-t" x="620" y="207" text-anchor="middle">PR: 🔍 stays, no review</text>
+
+            <line class="d-sep" x1="20" y1="256" x2="980" y2="256" />
+
+            <!-- With fix -->
+            <text class="d-band" x="20" y="288">With fix</text>
+            <text class="d-tag" x="96" y="288">proposed · not built yet</text>
+            <rect class="d-box" x="20" y="320" width="130" height="44" rx="8" />
+            <text class="d-t" x="85" y="339" text-anchor="middle">Agent</text>
+            <text class="d-s" x="85" y="355" text-anchor="middle">rule matched</text>
+            <line class="d-arrow" x1="150" y1="342" x2="182" y2="342" marker-end="url(#ah2)" />
+            <polygon class="d-diamond" points="220,308 254,342 220,376 186,342" />
+            <text class="d-t" x="220" y="347" text-anchor="middle">budget?</text>
+            <text class="d-tag" x="220" y="302" text-anchor="middle">B · free</text>
+            <line class="d-arrow" x1="254" y1="342" x2="296" y2="342" marker-end="url(#ah2)" />
+            <text class="d-tag d-ok-t" x="275" y="335" text-anchor="middle">ok</text>
+            <rect class="d-box" x="300" y="320" width="140" height="44" rx="8" />
+            <text class="d-t" x="370" y="339" text-anchor="middle">Executor</text>
+            <text class="d-s" x="370" y="355" text-anchor="middle">harness ready</text>
+            <line class="d-arrow" x1="440" y1="342" x2="472" y2="342" marker-end="url(#ah2)" />
+            <polygon class="d-diamond" points="510,308 544,342 510,376 476,342" />
+            <text class="d-t" x="510" y="347" text-anchor="middle">credit?</text>
+            <text class="d-tag" x="510" y="302" text-anchor="middle">A · &lt; $0.001</text>
+            <line class="d-arrow" x1="544" y1="342" x2="576" y2="342" marker-end="url(#ah2)" />
+            <text class="d-tag d-ok-t" x="560" y="335" text-anchor="middle">ok</text>
+            <rect class="d-llm" x="580" y="320" width="180" height="44" rx="8" />
+            <text class="d-t" x="670" y="339" text-anchor="middle">Claude review</text>
+            <text class="d-s d-llm-t" x="670" y="355" text-anchor="middle">LLM · $ · diagram 1</text>
+            <line class="d-arrow" x1="760" y1="342" x2="796" y2="342" marker-end="url(#ah2)" />
+            <rect class="d-bubble" x="800" y="322" width="180" height="40" rx="20" />
+            <text class="d-t" x="890" y="347" text-anchor="middle">🔍 + 📝 + 💬</text>
+
+            <line class="d-arrow" x1="220" y1="376" x2="220" y2="406" marker-end="url(#ah2)" />
+            <text class="d-tag d-bad-t" x="228" y="395">low</text>
+            <rect class="d-box" x="140" y="410" width="160" height="44" rx="8" />
+            <text class="d-t" x="220" y="429" text-anchor="middle">Skip the run</text>
+            <text class="d-s" x="220" y="445" text-anchor="middle">no container · $0</text>
+            <line class="d-arrow" x1="510" y1="376" x2="510" y2="406" marker-end="url(#ah2)" />
+            <text class="d-tag d-bad-t" x="518" y="395">low</text>
+            <rect class="d-bubble" x="400" y="410" width="220" height="44" rx="22" />
+            <text class="d-t" x="510" y="437" text-anchor="middle">⚠️ Skipped: AI credit low</text>
+          </svg>
+        </div>
+        <p class="cap"><b>A</b> Executor makes one tiny Haiku call before Claude starts and posts the ⚠️ comment with <code>gh</code>. <b>B</b> Agent adds up each run's cost against a tenant limit.</p>
+      </section>
+    </div>
   </main>
 
   <script src="flow-data.js"></script>

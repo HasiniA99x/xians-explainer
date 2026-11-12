@@ -210,3 +210,34 @@ pre { margin: 8px 0 0; background: var(--code-bg); color: var(--code-text); bord
 @media (prefers-reduced-motion: reduce) {
   .step button { transition: none; }
 }
+
+/* PR review diagrams (shown under the PR review tab) */
+.extras { max-width: 1100px; margin: 28px auto 0; display: grid; gap: 20px; }
+.extras[hidden] { display: none; }
+.figure { padding: 18px 20px; }
+.figure h3 { margin: 0 0 4px; font-size: 18px; }
+.figure .cap { margin: 0 0 12px; font-size: 13.5px; color: var(--muted); }
+.figure .cap:last-child { margin: 12px 0 0; }
+.figure .scroll { overflow-x: auto; }
+.diagram { display: block; width: 100%; min-width: 720px; height: auto; }
+.diagram text { font-family: inherit; }
+.d-t { fill: var(--text); font-size: 13px; font-weight: 600; }
+.d-s { fill: var(--muted); font-size: 12px; }
+.d-tag { fill: var(--muted); font-size: 11px; font-weight: 700; }
+.d-band { fill: var(--text); font-size: 15px; font-weight: 700; }
+.d-box { fill: var(--surface-2); stroke: var(--border); stroke-width: 1.2; }
+.d-head-box { fill: var(--surface-2); stroke: var(--border); stroke-width: 1.2; }
+.d-life { stroke: var(--border); stroke-width: 1.5; stroke-dasharray: 4 5; }
+.d-arrow { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.d-ret { stroke-dasharray: 5 4; }
+.d-head { fill: var(--muted); }
+.d-sep { stroke: var(--border); }
+.d-llm { fill: color-mix(in srgb, var(--sys-llm) 12%, var(--surface)); stroke: var(--sys-llm); stroke-width: 1.5; }
+.d-llm-t { fill: var(--sys-llm); }
+.d-bubble { fill: color-mix(in srgb, var(--accent) 10%, var(--surface)); stroke: var(--accent); stroke-width: 1.2; }
+.d-bad { fill: color-mix(in srgb, var(--danger) 10%, var(--surface)); stroke: var(--danger); stroke-width: 1.5; }
+.d-bad-t { fill: var(--danger); }
+.d-ok-t { fill: var(--sys-mongo); }
+.d-diamond { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; }
+.d-step { fill: var(--accent); }
+.d-step-t { fill: var(--surface); font-size: 11px; font-weight: 700; }

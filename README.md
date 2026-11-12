@@ -13,6 +13,7 @@ One page with three workflows, picked from the tabs:
 - **LLM · $** on a step means a model is called there and it costs tokens; **no LLM · free** means plain code.
 - **Code** names the file where that step lives.
 - **Show data** has a sample of the data at that step.
+- Under the **PR review** tab, two diagrams show the calls behind each PR comment, and what happens when AI credit runs low (today, and a proposed fix).
 
 The URL keeps the tab and step (`index.html#redeliver/admin`), so you can link to it.
 

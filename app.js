@@ -17,6 +17,7 @@
     document.querySelectorAll('#tabs button').forEach(b =>
       b.addEventListener('click', () => selectWorkflow(b.dataset.id)))
     $('#blurb').textContent = state.wf.blurb
+    document.querySelectorAll('[data-wf]').forEach(el => { el.hidden = el.dataset.wf !== state.wf.id })
   }
 
   function renderFlow() {
