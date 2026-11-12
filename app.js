@@ -7,6 +7,10 @@
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
   const short = id => id.slice(0, 8) + '…'
 
+  const llmChip = s => s.llm === 'optional'
+    ? '<span class="llm-chip optional">LLM · optional</span>'
+    : s.llm ? '<span class="llm-chip">LLM</span>' : ''
+
   function renderTabs() {
     $('#tabs').innerHTML = F.workflows
       .map(wf => `<button type="button" role="tab" data-id="${wf.id}" aria-selected="${wf === state.wf}">${esc(wf.name)}</button>`)
@@ -18,6 +22,7 @@
 
   function renderFlow() {
     const wf = state.wf
+    $('#flow').style.setProperty('--n', wf.steps.length)
     $('#flow').innerHTML = wf.steps
       .map((s, i) => `
         <li class="step sys-${s.sys}" data-i="${i}">
@@ -26,6 +31,7 @@
             <span class="name">${esc(s.name)}</span>
             <span class="action">${esc(s.action)}</span>
             ${s.req ? `<span class="req-chip">req ${short(wf.reqId)}</span>` : ''}
+            ${llmChip(s)}
             ${s.stop ? '<span class="stop-chip">or stops</span>' : ''}
           </button>
         </li>`)
@@ -43,10 +49,11 @@
     $('#detail').className = `card detail sys-${s.sys}`
     $('#detail').innerHTML = `
       <p class="where">${esc(state.wf.name)} · Step ${state.index + 1} of ${steps.length} · <b>${esc(s.name)}</b></p>
-      <h2>${esc(s.action)}</h2>
+      <h2>${esc(s.action)} ${llmChip(s)}</h2>
       <ul>${s.lines.map(l => `<li>${l}</li>`).join('')}</ul>
       ${s.stop ? `<p class="stop">${esc(s.stop)}</p>` : ''}
       ${ids ? `<div class="ids">${ids}</div>` : ''}
+      ${s.src ? `<p class="src">Code: <code>${esc(s.src)}</code></p>` : ''}
       <details><summary>Show data</summary><pre>${esc(JSON.stringify(s.data, null, 2))}</pre></details>`
   }
 
