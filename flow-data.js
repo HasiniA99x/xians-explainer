@@ -1,6 +1,8 @@
 /*
  * The Xians webhook flows: a GitHub trigger, a PR review (trigger, harness, LLM cost, results back) and a redelivery. Traced from XiansAi.Server, XiansAi.Lib, the-agent, agent-studio and plugins-official
- * (main plus open PRs: Lib #146, Server #661/#666, Studio #174/#175, agent #106). Values are made up;
+ * (main plus open PRs: Lib #146, Server #661/#666, Studio #174/#175, agent #106, including the #666/#175
+ * review fixes: body-hashed claim, per-server and per-user caps) and #659: each call runs in its own
+ * Integrator Workflow keyed by its request ID; the request-ID log tag was reverted. Values are made up;
  * their shapes match the code.
  */
 (function () {
@@ -8,12 +10,15 @@
     githubDelivery: '8c3f2e10-7b1d-11f1-9a4c-2f6d0e1b5a77',
     requestId: '3f9a6c2e-41d8-4b7e-9c55-0a1e7d2b8f64',
     deliveryId: '019a6b2e-5c41-7a10-9d3e-6f2b1c8e4a90',
-    integrator: 'acme:Xianix AI-DLC Agent:Integrator Workflow:hooks',
     newRequestId: 'b71e0d4c-9a2f-4c61-8e3b-5d7a1f0c2e98',
     newDeliveryId: '019a6b4f-0e12-7c33-8a51-2b9d4e7f1c06',
   }
+  // Each call has its own Integrator Workflow; it and the run it starts both end with the request ID.
+  ID.integrator = `acme:Xianix AI-DLC Agent:Integrator Workflow:hooks:${ID.requestId}`
   ID.processing = `acme:Xianix AI-DLC Agent:Processing Workflow:hooks:${ID.requestId}`
+  ID.newIntegrator = `acme:Xianix AI-DLC Agent:Integrator Workflow:hooks:${ID.newRequestId}`
   ID.newProcessing = `acme:Xianix AI-DLC Agent:Processing Workflow:hooks:${ID.newRequestId}`
+  const logsLink = wf => `/settings/logs?workflowId=${encodeURIComponent(wf)}`
 
   /**
    * `sys` picks the colour. `req` = the request ID has reached this step.
@@ -33,28 +38,30 @@
       id: 'server', sys: 'server', name: 'Xians Server', action: 'Gives a request ID', req: true,
       lines: [
         'Checks the API key in the URL.',
-        'Creates a new <b>request ID</b>. It follows this delivery everywhere.',
+        'Creates a new <b>request ID</b>. It ends the ID of every workflow this call runs.',
       ],
+      stop: 'Agent, workflow or activation name contains “:” → 400.',
       ids: { 'Request ID': ID.requestId },
-      data: { path: '/api/user/webhooks/builtin', auth: 'apikeyId → ok', requestId: ID.requestId },
+      data: { path: '/api/user/webhooks/builtin', auth: 'apikeyId → ok', requestId: ID.requestId, workflowId: ID.integrator },
     },
     {
       id: 'mongo', sys: 'mongo', name: 'MongoDB', action: 'Saves the call', req: true,
       lines: [
         'Stores the headers and body as one delivery.',
         'This is what you see — and can redeliver — in Agent Studio.',
+        'A faked <code>X-Xians-Redelivery</code> header is ignored: saved as a normal call.',
       ],
       ids: { 'Delivery ID': ID.deliveryId, 'Request ID': ID.requestId },
-      data: { collection: 'webhook_incomings', _id: ID.deliveryId, request_id: ID.requestId, keeps: 'newest 100 per webhook' },
+      data: { collection: 'webhook_incomings', _id: ID.deliveryId, request_id: ID.requestId, workflow_id: ID.integrator, redelivery_of: null, keeps: 'newest 100 per webhook' },
     },
     {
-      id: 'integrator', sys: 'integrator', name: 'Integrator Workflow', action: 'Queues it', req: true,
+      id: 'integrator', sys: 'integrator', name: 'Integrator Workflow', action: 'Own workflow', req: true,
       lines: [
-        'One long-lived workflow receives every delivery.',
-        'It hands this one to the agent.',
+        'A workflow <b>just for this call</b>; its ID ends with the request ID.',
+        'It hands the call to the agent, then closes after 5 min with nothing new.',
       ],
       ids: { 'Workflow': ID.integrator },
-      data: { temporal: 'signal-with-start', workflowId: ID.integrator, signal: 'HandleInboundChatOrData' },
+      data: { temporal: 'signal-with-start', workflowId: ID.integrator, signal: 'HandleInboundChatOrData', activationCheckedOn: 'acme:Xianix AI-DLC Agent:Integrator Workflow:hooks', closesAfterIdle: '300 s (INTEGRATOR-INACTIVITY-TIMEOUT-SECONDS)' },
     },
     {
       id: 'agent', sys: 'handler', name: 'Agent', action: 'Checks & matches', req: true,
@@ -69,11 +76,11 @@
     {
       id: 'processing', sys: 'processing', name: 'Processing Workflow', action: 'Starts the run', req: true,
       lines: [
-        'One run per matched rule.',
-        'Its ID ends with the request ID, so Studio can find it.',
+        'One run per matched rule. It keeps going after the Integrator Workflow closes.',
+        'Its ID ends with the <b>same request ID</b>, so Studio can find it.',
       ],
       ids: { 'Run': ID.processing },
-      data: { workflowId: ID.processing, memo: { requestId: ID.requestId } },
+      data: { workflowId: ID.processing, idConflictPolicy: 'UseExisting', secondMatch: `…:${ID.requestId}-2` },
     },
     {
       id: 'executor', sys: 'executor', name: 'Executor', action: 'Claude reviews', req: true, llm: true,
@@ -92,12 +99,11 @@
     {
       id: 'studio', sys: 'studio', name: 'Agent Studio', action: 'See logs · Redeliver', req: true,
       lines: [
-        '<b>Logs</b> opens every log tagged with this request ID.',
-        'No tagged logs → the button reads <b>No logs</b>.',
-        '<b>Redeliver</b> sends the saved call again (see the Redeliver tab).',
+        '<b>Logs</b> opens this call\'s own Integrator Workflow <b>plus</b> the Processing run it started.',
+        '<b>Redeliver</b> sends the saved call again (see the Redeliver tab). Greyed out if the call was saved cut short.',
       ],
       ids: { 'Delivery ID': ID.deliveryId, 'Request ID': ID.requestId },
-      data: { logsLink: `/settings/logs?requestId=${ID.requestId}` },
+      data: { logsLink: logsLink(ID.integrator), logsApiAsks: { workflowIds: [ID.integrator, ID.processing] } },
     },
   ]
 
@@ -108,19 +114,22 @@
       lines: [
         'Open a delivery and click <b>Redeliver now</b>.',
         'Needs the <code>webhooks:redeliver</code> permission (Developer or Tenant Admin).',
+        'Up to <b>3 at once</b> per user. The button is greyed out if the body or headers were saved cut short.',
       ],
+      stop: 'Already 3 running for you → 429, nothing is sent.',
       ids: { 'Original delivery': ID.deliveryId },
-      data: { button: 'Redeliver now', delivery: ID.deliveryId, user: 'dev-jane@acme.io' },
+      data: { button: 'Redeliver now', delivery: ID.deliveryId, user: 'dev-jane@acme.io', limits: { perUser: 3, truncated: 'button disabled' } },
     },
     {
       id: 'admin', sys: 'server', name: 'Admin API', action: 'Signs a claim',
       lines: [
         'Loads the saved call.',
-        'Signs a claim: valid 5 minutes, <b>one use</b> only.',
+        'Signs a claim: valid 5 minutes, <b>one use</b>, tied to a <b>hash of the body</b>.',
+        'Up to <b>10 redeliveries at once</b> per server.',
       ],
-      stop: 'Already being redelivered → 409, nothing is sent.',
+      stop: 'Already being redelivered, saved cut short or no URL → 409. Server busy → 429. Nothing is sent.',
       ids: { 'Original delivery': ID.deliveryId },
-      data: { endpoint: `POST …/incomings/${ID.deliveryId}/redeliver`, claim: { signed: 'HMAC', expires: '5 min', uses: 1 } },
+      data: { endpoint: `POST …/incomings/${ID.deliveryId}/redeliver`, claim: { signed: 'HMAC', expires: '5 min', uses: 1, bodySha256: 'Yk3v…Q9w' }, maxAtOnce: 10 },
     },
     {
       id: 'server', sys: 'server', name: 'Xians Server', action: 'Calls itself', req: true,
@@ -134,17 +143,18 @@
     {
       id: 'mongo', sys: 'mongo', name: 'MongoDB', action: 'Saves a new row', req: true,
       lines: [
-        'A new delivery row, linked to the original.',
-        'The original row stays unchanged.',
+        'Checks the body matches the hash in the claim.',
+        'A new delivery row, linked to the original. The original stays unchanged.',
       ],
+      stop: 'Body doesn’t match, or claim already used → saved as a normal call, not linked.',
       ids: { 'New delivery': ID.newDeliveryId, 'Redelivery of': ID.deliveryId },
-      data: { _id: ID.newDeliveryId, request_id: ID.newRequestId, redelivery_of: ID.deliveryId, triggered_by: 'dev-jane@acme.io' },
+      data: { _id: ID.newDeliveryId, request_id: ID.newRequestId, redelivery_of: ID.deliveryId, triggered_by: 'dev-jane@acme.io', bodyHash: 'matches' },
     },
     {
-      id: 'integrator', sys: 'integrator', name: 'Integrator Workflow', action: 'Queues it', req: true,
-      lines: ['Same as a call from GitHub: the long-lived workflow hands it to the agent.'],
-      ids: { 'Workflow': ID.integrator },
-      data: { workflowId: ID.integrator, requestId: ID.newRequestId },
+      id: 'integrator', sys: 'integrator', name: 'Integrator Workflow', action: 'New own workflow', req: true,
+      lines: ['A new workflow just for this call, named after the <b>new</b> request ID.'],
+      ids: { 'Workflow': ID.newIntegrator },
+      data: { workflowId: ID.newIntegrator, requestId: ID.newRequestId },
     },
     {
       id: 'agent', sys: 'handler', name: 'Agent', action: 'Checks & matches', req: true,
@@ -172,10 +182,11 @@
       lines: [
         'Toast: <b>Redelivered · answered 200 in 1.4 s</b>.',
         'The new row has a <b>Redelivery</b> badge and its own Logs.',
+        'Close the panel early → Studio stops waiting; the server still finishes.',
       ],
       stop: 'No answer in time → “Could not confirm the redelivery”, and the list refreshes.',
       ids: { 'New delivery': ID.newDeliveryId, 'New request ID': ID.newRequestId },
-      data: { toast: 'Redelivered · answered 200 in 1.4 s', newRow: { badge: 'Redelivery', redeliveryOf: ID.deliveryId }, logsLink: `/settings/logs?requestId=${ID.newRequestId}` },
+      data: { toast: 'Redelivered · answered 200 in 1.4 s', newRow: { badge: 'Redelivery', redeliveryOf: ID.deliveryId }, logsLink: logsLink(ID.newIntegrator) },
     },
   ]
 
@@ -193,10 +204,10 @@
       id: 'server', sys: 'server', name: 'Xians Server', action: 'Receives & saves', req: true, free: true,
       lines: [
         'Checks the API key, gives a <b>request ID</b>, saves the call.',
-        'Hands it to the agent.',
+        'Hands it to the agent in a workflow of its own.',
       ],
       ids: { 'Request ID': ID.requestId },
-      data: { requestId: ID.requestId, saved: 'webhook_incomings', to: 'Integrator Workflow' },
+      data: { requestId: ID.requestId, saved: 'webhook_incomings', to: ID.integrator },
     },
     {
       id: 'agent', sys: 'handler', name: 'Agent', action: 'Matches a rule', req: true, free: true,
@@ -258,7 +269,7 @@
       id: 'report', sys: 'handler', name: 'Agent', action: 'Collects cost', req: true, free: true,
       lines: [
         'Reads the executor\'s JSON result: cost, tokens, models.',
-        'Logs it under the request ID, sends metrics, removes the container.',
+        'Logs it in the run (ID ends with the request ID), sends metrics, removes the container.',
       ],
       data: { status: 'completed', cost_usd: 0.84, tokens: { input: 41200, output: 6100 }, models: ['claude-haiku-4-5', 'claude-sonnet-4-5'], took: '≈ 3.5 min' },
       src: 'the-agent/TheAgent/Workflows/ProcessingWorkflow.cs',
@@ -270,7 +281,7 @@
         '<b>Redeliver</b> runs it again (and spends again).',
       ],
       ids: { 'Request ID': ID.requestId },
-      data: { logsLink: `/settings/logs?requestId=${ID.requestId}`, summary: '| Cost | $0.8400 | · | Tokens | in=41200, out=6100 |' },
+      data: { logsLink: logsLink(ID.integrator), summary: '| Cost | $0.8400 | · | Tokens | in=41200, out=6100 |' },
     },
   ]
 

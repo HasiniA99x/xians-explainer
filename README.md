@@ -9,7 +9,7 @@ One page with three workflows, picked from the tabs:
 | Redeliver | A saved call is re-sent from Agent Studio and runs again under a new request ID. |
 
 - Click a step (or press **Play**, or use **←/→**) to see what happens there in two or three lines.
-- **req** on a step means the delivery's request ID has reached it. That ID is what Studio uses to find all of the delivery's logs.
+- **req** on a step means the delivery's request ID has reached it. The call's own Integrator Workflow and its Processing run both end with that ID, which is how Studio's **Logs** finds them.
 - **LLM · $** on a step means a model is called there and it costs tokens; **no LLM · free** means plain code.
 - **Code** names the file where that step lives.
 - **Show data** has a sample of the data at that step.
@@ -31,4 +31,4 @@ No dependencies and no build step: open `index.html` in a browser.
 
 ## Sources
 
-Traced from XiansAi.Server, XiansAi.Lib, the-agent, agent-studio and plugins-official (`pr-reviewer`): `main` plus open PRs for request-ID log tags (XiansAi.Lib #146, XiansAi.Server #661, agent-studio #174), run naming (the-agent #106) and redelivery (XiansAi.Server #666, agent-studio #175). Sample values are invented; their shapes match the code.
+Traced from XiansAi.Server, XiansAi.Lib, the-agent, agent-studio and plugins-official (`pr-reviewer`): `main` plus open work for one workflow per call and logs by workflow ID (#659 branches in XiansAi.Server, XiansAi.Lib, the-agent and agent-studio; the earlier request-ID log tag was reverted), run naming (the-agent #106) and redelivery (XiansAi.Server #666, agent-studio #175). Sample values are invented; their shapes match the code.
