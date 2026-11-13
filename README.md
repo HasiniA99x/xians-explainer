@@ -1,12 +1,13 @@
 # Xians webhook flow explainer
 
-One page with three workflows, picked from the tabs:
+One page with four workflows, picked from the tabs:
 
 | Tab | What it shows |
 |-----|---------------|
 | GitHub trigger | A labelled PR goes through Xians in nine steps and gets an AI review. |
 | PR review | Trigger (label or `@xianix` comment) → Server → Agent → Executor harness → LLM → PR plugin posts → cost back to Agent and Agent Studio. |
 | Redeliver | A saved call is re-sent from Agent Studio and runs again under a new request ID. |
+| Raise events | Drawn as a flowchart: a run POSTs `before` events (status `started`) and `after` events (`success` / `error`, with cost) to outside listeners, paired by one correlation ID. Red dashed boxes are where an event is dropped or never sent; dashed loops are retries. |
 
 - Click a step (or press **Play**, or use **←/→**) to see what happens there in two or three lines.
 - **req** on a step means the delivery's request ID has reached it. The call's own Integrator Workflow and its Processing run both end with that ID, which is how Studio's **Logs** finds them.
@@ -31,4 +32,4 @@ No dependencies and no build step: open `index.html` in a browser.
 
 ## Sources
 
-Traced from XiansAi.Server, XiansAi.Lib, the-agent, agent-studio and plugins-official (`pr-reviewer`): `main` plus open work for one workflow per call and logs by workflow ID (#659 branches in XiansAi.Server, XiansAi.Lib, the-agent and agent-studio; the earlier request-ID log tag was reverted), run naming (the-agent #106) and redelivery (XiansAi.Server #666, agent-studio #175). Sample values are invented; their shapes match the code.
+Traced from XiansAi.Server, XiansAi.Lib, the-agent, agent-studio and plugins-official (`pr-reviewer`): `main` plus open work for one workflow per call and logs by workflow ID (#659 branches in XiansAi.Server, XiansAi.Lib, the-agent and agent-studio; the earlier request-ID log tag was reverted), run naming (the-agent #106), before/after raise-events (the-agent branch `653-agent-pulse-raise-event-type`) and redelivery (XiansAi.Server #666, agent-studio #175). Sample values are invented; their shapes match the code.

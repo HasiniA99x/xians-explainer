@@ -20,8 +20,66 @@
     document.querySelectorAll('[data-wf]').forEach(el => { el.hidden = el.dataset.wf !== state.wf.id })
   }
 
+  // A tab with `chart` is drawn as a flowchart (ovals, boxes, a diamond, side exits) instead of a card row.
+  function renderChart() {
+    const wf = state.wf
+    const c = wf.chart
+    const stepNo = id => wf.steps.findIndex(s => s.id === id)
+    const lines = (label, cx, cy) => label
+      .map((t, k) => `<text class="c-t${k ? ' c-sub' : ''}" x="${cx}" y="${cy + (k - (label.length - 1) / 2) * 17 + 5}" text-anchor="middle">${esc(t)}</text>`)
+      .join('')
+    const seen = new Set()
+    const nodes = c.nodes.map(n => {
+      const i = stepNo(n.step)
+      const s = wf.steps[i]
+      let shape, cx, cy, bx, by
+      if (n.kind === 'decide') {
+        cx = n.cx; cy = n.cy
+        shape = `<polygon class="c-shape" points="${cx},${cy - n.r} ${cx + n.r},${cy} ${cx},${cy + n.r} ${cx - n.r},${cy}" />`
+        bx = cx - n.r + 4; by = cy - n.r + 4
+      } else {
+        cx = n.x + n.w / 2; cy = n.y + n.h / 2
+        const rx = n.kind === 'start' || n.kind === 'end' ? n.h / 2 : 8
+        shape = `<rect class="c-shape" x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="${rx}" />`
+        bx = n.x + (rx > 8 ? 14 : 2); by = n.y + 2
+      }
+      // The numbered badge goes on the first node of each step; side exits share their step's number.
+      const badge = seen.has(n.step) || n.kind === 'bad' ? ''
+        : `<circle class="c-badge" cx="${bx}" cy="${by}" r="10" /><text class="c-badge-t" x="${bx}" y="${by + 4}" text-anchor="middle">${i + 1}</text>`
+      seen.add(n.step)
+      return `<g class="c-node c-${n.kind}" data-i="${i}" tabindex="0" role="button" aria-label="Step ${i + 1}: ${esc(s.action)}">
+        ${shape}${lines(n.label, cx, cy)}${badge}</g>`
+    }).join('')
+    const edges = c.edges.map(e => `
+      <path class="c-edge${e.kind ? ' c-edge-' + e.kind : ''}" d="${e.d}" marker-end="url(#c-ah${e.kind === 'bad' ? '-bad' : ''})" />
+      ${e.label ? `<text class="c-label${e.kind === 'bad' ? ' c-label-bad' : ''}" x="${e.lx}" y="${e.ly}" text-anchor="${e.anchor || 'middle'}">${esc(e.label)}</text>` : ''}`)
+      .join('')
+    const groups = (c.groups || []).map(g => `
+      <path class="c-group" d="M${g.x},62 V52 H${g.x + g.w} V62" />
+      <text class="c-group-t" x="${g.x + g.w / 2}" y="42" text-anchor="middle">${esc(g.label)}</text>`).join('')
+    $('#chart').innerHTML = `
+      <div class="scroll">
+        <svg class="chart" viewBox="0 24 ${c.w} ${c.h - 24}" role="img" aria-label="${esc(wf.name)} flowchart">
+          <defs>
+            <marker id="c-ah" viewBox="0 0 8 8" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="c-head" d="M0,0 L8,4 L0,8 z" /></marker>
+            <marker id="c-ah-bad" viewBox="0 0 8 8" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="c-head-bad" d="M0,0 L8,4 L0,8 z" /></marker>
+          </defs>
+          ${groups}${edges}${nodes}
+        </svg>
+      </div>`
+    document.querySelectorAll('#chart .c-node').forEach(g => {
+      const open = () => { stop(); go(Number(g.dataset.i)) }
+      g.addEventListener('click', open)
+      g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open() } })
+    })
+  }
+
   function renderFlow() {
     const wf = state.wf
+    $('#flow').hidden = !!wf.chart
+    $('#chart').hidden = !wf.chart
+    if (wf.chart) { $('#flow').innerHTML = ''; renderChart(); return }
+    $('#chart').innerHTML = ''
     $('#flow').style.setProperty('--n', wf.steps.length)
     $('#flow').innerHTML = wf.steps
       .map((s, i) => `
@@ -30,7 +88,7 @@
             <span class="num">${i + 1}</span>
             <span class="name">${esc(s.name)}</span>
             <span class="action">${esc(s.action)}</span>
-            ${s.req ? `<span class="req-chip">req ${short(wf.reqId)}</span>` : ''}
+            ${s.req && wf.reqId ? `<span class="req-chip">req ${short(wf.reqId)}</span>` : ''}
             ${llmChip(s)}
             ${s.stop ? '<span class="stop-chip">or stops</span>' : ''}
           </button>
@@ -61,6 +119,11 @@
     const last = state.wf.steps.length - 1
     state.index = Math.max(0, Math.min(last, i))
     document.querySelectorAll('.step').forEach((el, n) => {
+      el.classList.toggle('current', n === state.index)
+      el.classList.toggle('done', n < state.index)
+    })
+    document.querySelectorAll('#chart .c-node').forEach(el => {
+      const n = Number(el.dataset.i)
       el.classList.toggle('current', n === state.index)
       el.classList.toggle('done', n < state.index)
     })

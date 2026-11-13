@@ -241,3 +241,40 @@ pre { margin: 8px 0 0; background: var(--code-bg); color: var(--code-text); bord
 .d-diamond { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; }
 .d-step { fill: var(--accent); }
 .d-step-t { fill: var(--surface); font-size: 11px; font-weight: 700; }
+
+/* Flowchart tabs (Raise events): ovals for start/end, boxes, a diamond for the decision, red side exits */
+.chart-wrap { padding: 14px 16px 6px; }
+.chart-wrap[hidden] { display: none; }
+.chart-wrap .scroll { overflow-x: auto; }
+.chart { display: block; width: 100%; min-width: 900px; height: auto; }
+.chart text { font-family: inherit; }
+.c-node { cursor: pointer; outline: none; }
+.c-node .c-shape { stroke-width: 1.5; transition: stroke-width 0.15s, filter 0.15s; }
+.c-start .c-shape, .c-end .c-shape { fill: color-mix(in srgb, var(--sys-mongo) 20%, var(--surface)); stroke: var(--sys-mongo); }
+.c-process .c-shape { fill: color-mix(in srgb, var(--sys-server) 16%, var(--surface)); stroke: var(--sys-server); }
+.c-event .c-shape { fill: color-mix(in srgb, var(--sys-handler) 22%, var(--surface)); stroke: var(--sys-handler); }
+.c-llm .c-shape { fill: color-mix(in srgb, var(--sys-llm) 16%, var(--surface)); stroke: var(--sys-llm); }
+.c-decide .c-shape { fill: color-mix(in srgb, var(--danger) 18%, var(--surface)); stroke: var(--danger); }
+.c-bad .c-shape { fill: color-mix(in srgb, var(--danger) 8%, var(--surface)); stroke: var(--danger); stroke-dasharray: 5 4; }
+.c-t { fill: var(--text); font-size: 13.5px; font-weight: 650; }
+.c-sub { fill: var(--muted); font-size: 12px; font-weight: 500; }
+.c-bad .c-t:not(.c-sub) { fill: var(--danger); }
+.c-node:hover .c-shape, .c-node:focus-visible .c-shape { stroke-width: 2.5; }
+.c-node.done .c-shape { filter: saturate(0.5); }
+.c-node.current .c-shape { stroke: var(--accent); stroke-width: 3.5; }
+.c-badge { fill: var(--muted); }
+.c-node.done .c-badge, .c-node.current .c-badge { fill: var(--accent); }
+.c-badge-t { fill: var(--surface); font-size: 11px; font-weight: 700; }
+.c-edge { stroke: var(--muted); stroke-width: 1.6; fill: none; }
+.c-edge-bad { stroke: var(--danger); stroke-dasharray: 5 4; }
+.c-edge-loop { stroke-dasharray: 5 4; }
+.c-head { fill: var(--muted); }
+.c-head-bad { fill: var(--danger); }
+.c-label { fill: var(--muted); font-size: 11.5px; font-weight: 600; }
+.c-label-bad { fill: var(--danger); }
+.c-group { stroke: var(--border); stroke-width: 1.5; fill: none; }
+.c-group-t { fill: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+
+@media (prefers-reduced-motion: reduce) {
+  .c-node .c-shape { transition: none; }
+}

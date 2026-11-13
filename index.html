@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Xians Webhook Flow</title>
-  <meta name="description" content="A GitHub webhook through Xians: a labelled PR, a PR review from trigger to results with LLM cost, and redelivery from Agent Studio." />
+  <meta name="description" content="A GitHub webhook through Xians: a labelled PR, a PR review from trigger to results with LLM cost, redelivery from Agent Studio, and before/after raise-events to outside listeners." />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -18,6 +18,8 @@
     <p class="blurb" id="blurb"></p>
 
     <ol class="flow" id="flow" aria-label="Webhook flow"></ol>
+    <!-- Tabs with a `chart` (Raise events) draw a flowchart here instead of the card row -->
+    <div class="card chart-wrap" id="chart" hidden></div>
 
     <div class="controls">
       <button type="button" class="btn" id="prev" aria-label="Previous step">◀</button>

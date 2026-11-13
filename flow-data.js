@@ -285,10 +285,142 @@
     },
   ]
 
+  // the-agent branch 653-agent-pulse-raise-event-type: raise-events get a `type` (before / after).
+  ID.correlationId = '6d2f8a41-0c7e-4b39-a5d2-91e4f3b7c058'
+  const eventsBody = (status, extra) => ({
+    correlationId: ID.correlationId, activity: 'pr-review', pr: '42', plugin: 'pr-reviewer', status, ...extra,
+  })
+  const eventsSteps = [
+    {
+      id: 'rule', sys: 'integrator', name: 'Integrator Workflow', action: 'Rule matched', free: true,
+      lines: [
+        'A webhook matched an execution block in <code>rules.json</code>.',
+        'The block lists its <code>raise-events</code>: one HTTP POST each, to an outside listener (AI Hub, billing, Slack).',
+      ],
+      data: {
+        'raise-events': [
+          { name: 'ai-hub-start', type: 'before', url: 'https://ai-hub.example/nodes/nd_bls…', payload: { correlationId: '{{correlationId}}', status: '{{metrics.status}}' } },
+          { name: 'ai-hub-metrics', type: 'after', url: 'https://ai-hub.example/nodes/nd_bls…', payload: { correlationId: '{{correlationId}}', cost: '{{metrics.cost-usd}}' } },
+        ],
+      },
+      src: 'the-agent/TheAgent/Rules/WebhookRulesEvaluator.cs',
+    },
+    {
+      id: 'sort', sys: 'integrator', name: 'Integrator Workflow', action: 'Sorts by type', free: true,
+      lines: [
+        '<code>type</code> is <b>before</b> or <b>after</b>, in any case.',
+        'No <code>type</code> means <b>after</b>, so older rules work as before.',
+      ],
+      stop: 'Any other type → a warning in the logs and that event is dropped. No URL → dropped too.',
+      data: { before: 'before', BEFORE: 'before', '(none)': 'after', After: 'after', start: 'skipped + warning' },
+      src: 'the-agent/TheAgent/Rules/WebhookRulesModels.cs (RaiseEventTypes)',
+    },
+    {
+      id: 'correlation', sys: 'processing', name: 'Processing Workflow', action: 'One correlation ID', free: true,
+      lines: [
+        'Made <b>once per run</b>, before anything is sent.',
+        'The before and after events carry the <b>same</b> ID, so a listener can pair them.',
+      ],
+      ids: { 'Correlation ID': ID.correlationId },
+      data: { correlationId: ID.correlationId, madeWith: 'Workflow.NewGuid() (safe on replay)' },
+      src: 'the-agent/TheAgent/Workflows/ProcessingWorkflow.cs',
+    },
+    {
+      id: 'before', sys: 'handler', name: 'Processing Workflow', action: 'Sends before events', free: true,
+      lines: [
+        'POSTs each <b>before</b> event, one at a time, <b>before the container starts</b>.',
+        '<code>status</code> is <code>started</code>; tokens and cost are empty, model is the rule’s model.',
+        'The run waits for these, so a slow listener delays it.',
+      ],
+      stop: '5xx or no answer in 30 s → retried, up to 10 tries. 4xx, or a required header is empty → not retried. Either way: logged and the run goes on.',
+      ids: { 'Correlation ID': ID.correlationId },
+      data: { POST: 'https://ai-hub.example/nodes/nd_bls…', body: eventsBody('started', { model: 'claude-sonnet-4-5', tokens: '', costUsd: '' }) },
+      src: 'the-agent/TheAgent/Activities/RaiseEventActivities.cs',
+    },
+    {
+      id: 'container', sys: 'executor', name: 'Executor', action: 'Container runs', llm: true,
+      lines: [
+        'The executor runs the prompt; this is where tokens are spent.',
+        'A failed run still returns a result, with status <code>error</code>.',
+      ],
+      data: { status: 'completed', cost_usd: 0.84, tokens: { input: 41200, output: 6100 }, models: ['claude-sonnet-4-5'] },
+      src: 'the-agent/TheAgent/Activities/ContainerActivities.cs',
+    },
+    {
+      id: 'result', sys: 'processing', name: 'Processing Workflow', action: 'Result back?', free: true,
+      lines: [
+        '<b>Yes</b> (success or error) → cost is recorded, then the after events go out.',
+        '<b>No</b> → the after events are never sent.',
+      ],
+      stop: 'Container won’t start, or the wait step throws → no after event. The listener only ever sees “started”.',
+      data: { yes: ['success', 'error'], no: ['StartContainerAsync failed', 'WaitAndCollectOutputAsync threw'] },
+      src: 'the-agent/TheAgent/Workflows/ProcessingWorkflow.cs',
+    },
+    {
+      id: 'after', sys: 'handler', name: 'Processing Workflow', action: 'Sends after events', free: true,
+      lines: [
+        'POSTs each <b>after</b> event (and those with no type) once the run is done.',
+        '<code>status</code> is <code>success</code> or <code>error</code>, with tokens, cost and model.',
+        'Same retries as before events. A failure never changes the run’s outcome.',
+      ],
+      stop: '5xx or no answer in 30 s → retried, up to 10 tries. 4xx → not retried. Logged, then dropped.',
+      ids: { 'Correlation ID': ID.correlationId },
+      data: { POST: 'https://ai-hub.example/nodes/nd_bls…', body: eventsBody('success', { model: 'claude-sonnet-4-5', tokens: '47300', costUsd: '0.84' }) },
+      src: 'the-agent/TheAgent/Workflows/RaiseEventVariables.cs',
+    },
+    {
+      id: 'listener', sys: 'studio', name: 'Listener', action: 'Pairs start & end', free: true,
+      lines: [
+        'Gets two calls with one correlation ID: <code>started</code>, then <code>success</code> or <code>error</code>.',
+        'Only a <code>started</code> with no end means the run never reported back.',
+      ],
+      ids: { 'Correlation ID': ID.correlationId },
+      data: { first: eventsBody('started'), second: eventsBody('success', { costUsd: '0.84' }) },
+    },
+  ]
+
+  /*
+   * Flowchart for the Raise events tab. Each node's `step` is the step it opens; `kind` sets the shape
+   * and colour (start/end ovals, process boxes, event boxes, a decision diamond, red side exits).
+   */
+  const eventsChart = {
+    w: 1270, h: 320,
+    groups: [
+      { x: 20, w: 288, label: 'Integrator Workflow · rules' },
+      { x: 344, w: 912, label: 'Processing Workflow · one run' },
+    ],
+    nodes: [
+      { step: 'rule', kind: 'start', x: 20, y: 110, w: 120, h: 60, label: ['Rule', 'matched'] },
+      { step: 'sort', kind: 'process', x: 176, y: 110, w: 132, h: 60, label: ['Sort events', 'by type'] },
+      { step: 'sort', kind: 'bad', x: 168, y: 244, w: 148, h: 52, label: ['Unknown type', 'skipped + warning'] },
+      { step: 'correlation', kind: 'process', x: 344, y: 110, w: 132, h: 60, label: ['One', 'correlation ID'] },
+      { step: 'before', kind: 'event', x: 512, y: 110, w: 140, h: 60, label: ['POST before', 'status: started'] },
+      { step: 'container', kind: 'llm', x: 688, y: 110, w: 140, h: 60, label: ['Container runs', 'LLM · $'] },
+      { step: 'result', kind: 'decide', cx: 905, cy: 140, r: 48, label: ['Result', 'back?'] },
+      { step: 'result', kind: 'bad', x: 826, y: 244, w: 158, h: 52, label: ['No after event', 'only “started” seen'] },
+      { step: 'after', kind: 'event', x: 988, y: 110, w: 140, h: 60, label: ['POST after', 'success / error'] },
+      { step: 'listener', kind: 'end', x: 1160, y: 110, w: 96, h: 60, label: ['Listener', 'pairs them'] },
+    ],
+    edges: [
+      { d: 'M140,140 H172' },
+      { d: 'M242,170 V240', kind: 'bad', label: 'other type', lx: 250, ly: 210, anchor: 'start' },
+      { d: 'M308,140 H340' },
+      { d: 'M476,140 H508' },
+      { d: 'M652,140 H684' },
+      { d: 'M828,140 H853' },
+      { d: 'M953,140 H984', label: 'yes', lx: 968, ly: 132 },
+      { d: 'M905,188 V240', kind: 'bad', label: 'no', lx: 913, ly: 216, anchor: 'start' },
+      { d: 'M1128,140 H1156' },
+      { d: 'M622,170 V212 H542 V174', kind: 'loop', label: '5xx · timeout → retry (≤ 10)', lx: 582, ly: 230 },
+      { d: 'M1098,170 V212 H1018 V174', kind: 'loop', label: '5xx · timeout → retry (≤ 10)', lx: 1058, ly: 230 },
+    ],
+  }
+
   const workflows = [
     { id: 'github', name: 'GitHub trigger', blurb: 'A labelled PR gets an AI review.', reqId: ID.requestId, steps },
     { id: 'prreview', name: 'PR review', blurb: 'Trigger → harness → LLM → back. Each step shows whether it costs tokens.', reqId: ID.requestId, steps: prReviewSteps },
     { id: 'redeliver', name: 'Redeliver', blurb: 'Re-send a saved call from Agent Studio. It runs again under a new request ID.', reqId: ID.newRequestId, steps: redeliverSteps },
+    { id: 'events', name: 'Raise events', blurb: 'An agent run tells outside listeners it is starting (before) and how it ended (after), with one correlation ID.', steps: eventsSteps, chart: eventsChart },
   ]
 
   window.FLOW = { ID, workflows }
