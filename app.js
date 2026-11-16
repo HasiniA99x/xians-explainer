@@ -156,6 +156,123 @@
     go(i >= 0 ? i : 0)
   }
 
+  // The Before / After sections under the Raise events chart. Strings in FLOW.eventSections are trusted
+  // authoring HTML (same as step `lines`); JSON samples are escaped.
+  function renderEventSections() {
+    const el = $('#event-sections')
+    if (!el || !F.eventSections) return
+    const rows = (list, cls) => list.map(([k, v]) => `<tr><th scope="row">${cls === 'mono' ? `<code>${esc(k)}</code>` : esc(k)}</th><td>${v}</td></tr>`).join('')
+    el.innerHTML = F.eventSections.map(sec => `
+      <section class="card figure ev-sec sys-${sec.sys}" aria-labelledby="ev-${sec.id}">
+        <h3 id="ev-${sec.id}">${esc(sec.title)} <span class="ev-tag">${esc(sec.tag)}</span></h3>
+        <p class="cap">${sec.summary}</p>
+        <table class="ev-table"><tbody>${rows(sec.facts)}</tbody></table>
+        <h4>Values it can use</h4>
+        <table class="ev-table"><tbody>${rows(sec.vars, 'mono')}</tbody></table>
+        <h4>Where it lives</h4>
+        <ul class="ev-code">${sec.code.map(([f, what]) => `<li><code>${esc(f)}</code> <span>${what}</span></li>`).join('')}</ul>
+        <h4>rules.json entry</h4>
+        <p class="ev-note">${esc(sec.ruleNote)}</p>
+        <pre>${esc(JSON.stringify(sec.rule, null, 2))}</pre>
+        <details><summary>POST body the listener gets</summary><pre>${esc(JSON.stringify(sec.body, null, 2))}</pre></details>
+      </section>`).join('')
+  }
+  renderEventSections()
+
+  // Live listener: server.js stores what arrives at /listener/before and /listener/after and streams it here.
+  const lis = { events: [], open: new Set() }
+  const timeOf = iso => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+
+  function setLisState(state, text) {
+    $('#lis-state').dataset.state = state
+    $('#lis-state').textContent = text
+    $('#lis-help').hidden = state !== 'off'
+    $('#lis-clear').disabled = state !== 'on' || !lis.events.length
+  }
+
+  function renderListenerUrls() {
+    const base = location.protocol.startsWith('http') ? location.origin : 'http://127.0.0.1:8765'
+    $('#lis-urls').innerHTML = ['before', 'after'].map(t => `
+      <div class="lis-url"><span class="lis-type lis-${t}">${t}</span><code>POST ${esc(base)}/listener/${t}</code></div>`).join('')
+  }
+
+  // One row per correlation ID: its before and after events side by side.
+  function renderListener() {
+    const runs = new Map()
+    for (const e of lis.events) {
+      const key = e.correlationId || `no-id-${e.id}`
+      if (!runs.has(key)) runs.set(key, { key, id: e.correlationId, before: [], after: [], last: e.receivedAt })
+      const r = runs.get(key)
+      r[e.type].push(e)
+      r.last = e.receivedAt
+    }
+    const list = [...runs.values()].sort((a, b) => b.last.localeCompare(a.last))
+    $('#lis-clear').disabled = $('#lis-state').dataset.state !== 'on' || !list.length
+    if (!list.length) {
+      $('#lis-runs').innerHTML = '<p class="lis-empty">Nothing received yet. Trigger a PR review and the before event lands here before the container starts.</p>'
+      return
+    }
+    // Payloads may be an object or a one-item array, and may or may not carry a status.
+    const payloadOf = e => (Array.isArray(e.body) ? e.body[0] : e.body) || {}
+    const actorsOf = r => {
+      for (const e of [...r.after, ...r.before].reverse()) {
+        const a = payloadOf(e).actors
+        if (Array.isArray(a) && a.length) return a.map(x => `<code>${esc(x)}</code>`).join(' ')
+      }
+      return '<span class="lis-n">—</span>'
+    }
+    const cell = (arr, type) => {
+      if (!arr.length) return `<td class="lis-miss">${type === 'after' ? 'not received' : '—'}</td>`
+      const e = arr[arr.length - 1]
+      const st = ` · <b>${esc(e.status || 'received')}</b>`
+      return `<td>${timeOf(e.receivedAt)}${st}${arr.length > 1 ? ` <span class="lis-n">×${arr.length}</span>` : ''}${e.parseError ? ' <span class="lis-bad">not JSON</span>' : ''}</td>`
+    }
+    $('#lis-runs').innerHTML = `
+      <div class="scroll"><table class="ev-table lis-table">
+        <thead><tr><th>Correlation ID</th><th>Actors</th><th>Before</th><th>After</th><th></th></tr></thead>
+        <tbody>${list.map(r => `
+          <tr>
+            <td><code>${r.id ? esc(r.id) : '(none)'}</code></td>
+            <td>${actorsOf(r)}</td>
+            ${cell(r.before, 'before')}${cell(r.after, 'after')}
+            <td><button type="button" class="lis-toggle" data-key="${esc(r.key)}" aria-expanded="${lis.open.has(r.key)}">${lis.open.has(r.key) ? 'Hide' : 'Body'}</button></td>
+          </tr>
+          ${lis.open.has(r.key) ? `<tr class="lis-body"><td colspan="5">${[...r.before, ...r.after].map(e => `
+            <p class="lis-meta"><span class="lis-type lis-${e.type}">${e.type}</span> ${timeOf(e.receivedAt)} · headers: ${esc(e.headerNames.join(', ') || 'none')}</p>
+            <pre>${esc(typeof e.body === 'string' ? e.body : JSON.stringify(e.body, null, 2))}</pre>`).join('')}</td></tr>` : ''}`).join('')}
+        </tbody>
+      </table></div>`
+    document.querySelectorAll('.lis-toggle').forEach(b => b.addEventListener('click', () => {
+      const k = b.dataset.key
+      lis.open.has(k) ? lis.open.delete(k) : lis.open.add(k)
+      renderListener()
+    }))
+  }
+
+  function connectListener() {
+    renderListenerUrls()
+    renderListener()
+    if (!location.protocol.startsWith('http') || !window.EventSource) { setLisState('off', 'Not running'); return }
+    setLisState('wait', 'Connecting…')
+    const src = new EventSource('listener/stream')
+    src.onopen = () => setLisState('on', 'Listening')
+    // The browser retries on its own while the state is CONNECTING; if it gives up (CLOSED, e.g. the
+    // server was restarted), open a fresh stream so the panel recovers without a page reload.
+    src.onerror = () => {
+      setLisState('off', 'Not running')
+      if (src.readyState === EventSource.CLOSED) setTimeout(connectListener, 3000)
+    }
+    src.onmessage = m => {
+      const msg = JSON.parse(m.data)
+      if (msg.kind === 'snapshot') lis.events = msg.events
+      else if (msg.kind === 'event') lis.events.push(msg.event)
+      else if (msg.kind === 'cleared') { lis.events = []; lis.open.clear() }
+      renderListener()
+    }
+  }
+  $('#lis-clear').addEventListener('click', () => fetch('listener/events', { method: 'DELETE' }).catch(() => {}))
+  connectListener()
+
   $('#prev').addEventListener('click', () => { stop(); go(state.index - 1) })
   $('#next').addEventListener('click', () => { stop(); go(state.index + 1) })
   $('#play').addEventListener('click', togglePlay)

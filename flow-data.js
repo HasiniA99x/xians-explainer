@@ -287,9 +287,10 @@
 
   // the-agent branch 653-agent-pulse-raise-event-type: raise-events get a `type` (before / after).
   ID.correlationId = '6d2f8a41-0c7e-4b39-a5d2-91e4f3b7c058'
-  const eventsBody = (status, extra) => ({
-    correlationId: ID.correlationId, activity: 'pr-review', pr: '42', plugin: 'pr-reviewer', status, ...extra,
-  })
+  // The listener-before / listener-after entries in rules.json send the same small payload.
+  const listenerPayload = { correlationId: '{{correlationId}}', actors: ['{{pr-author}}', '{{plugin-name}}'] }
+  const listenerBody = { correlationId: ID.correlationId, actors: ['octocat', 'pr-reviewer@xianix-plugins-official'] }
+
   const eventsSteps = [
     {
       id: 'rule', sys: 'integrator', name: 'Integrator Workflow', action: 'Rule matched', free: true,
@@ -299,8 +300,8 @@
       ],
       data: {
         'raise-events': [
-          { name: 'ai-hub-start', type: 'before', url: 'https://ai-hub.example/nodes/nd_bls…', payload: { correlationId: '{{correlationId}}', status: '{{metrics.status}}' } },
-          { name: 'ai-hub-metrics', type: 'after', url: 'https://ai-hub.example/nodes/nd_bls…', payload: { correlationId: '{{correlationId}}', cost: '{{metrics.cost-usd}}' } },
+          { name: 'listener-before', type: 'before', url: 'http://127.0.0.1:8765/listener/before', payload: listenerPayload },
+          { name: 'listener-after', type: 'after', url: 'http://127.0.0.1:8765/listener/after', payload: listenerPayload },
         ],
       },
       src: 'the-agent/TheAgent/Rules/WebhookRulesEvaluator.cs',
@@ -329,12 +330,12 @@
       id: 'before', sys: 'handler', name: 'Processing Workflow', action: 'Sends before events', free: true,
       lines: [
         'POSTs each <b>before</b> event, one at a time, <b>before the container starts</b>.',
-        '<code>status</code> is <code>started</code>; tokens and cost are empty, model is the rule’s model.',
+        'The body is whatever the entry’s <code>payload</code> says; here just the correlation ID and actors.',
         'The run waits for these, so a slow listener delays it.',
       ],
       stop: '5xx or no answer in 30 s → retried, up to 10 tries. 4xx, or a required header is empty → not retried. Either way: logged and the run goes on.',
       ids: { 'Correlation ID': ID.correlationId },
-      data: { POST: 'https://ai-hub.example/nodes/nd_bls…', body: eventsBody('started', { model: 'claude-sonnet-4-5', tokens: '', costUsd: '' }) },
+      data: { POST: 'http://127.0.0.1:8765/listener/before', body: listenerBody },
       src: 'the-agent/TheAgent/Activities/RaiseEventActivities.cs',
     },
     {
@@ -360,22 +361,22 @@
       id: 'after', sys: 'handler', name: 'Processing Workflow', action: 'Sends after events', free: true,
       lines: [
         'POSTs each <b>after</b> event (and those with no type) once the run is done.',
-        '<code>status</code> is <code>success</code> or <code>error</code>, with tokens, cost and model.',
+        'Here the same small body as the before event; add <code>{{metrics.status}}</code>, tokens or cost to the payload to send them.',
         'Same retries as before events. A failure never changes the run’s outcome.',
       ],
       stop: '5xx or no answer in 30 s → retried, up to 10 tries. 4xx → not retried. Logged, then dropped.',
       ids: { 'Correlation ID': ID.correlationId },
-      data: { POST: 'https://ai-hub.example/nodes/nd_bls…', body: eventsBody('success', { model: 'claude-sonnet-4-5', tokens: '47300', costUsd: '0.84' }) },
+      data: { POST: 'http://127.0.0.1:8765/listener/after', body: listenerBody },
       src: 'the-agent/TheAgent/Workflows/RaiseEventVariables.cs',
     },
     {
       id: 'listener', sys: 'studio', name: 'Listener', action: 'Pairs start & end', free: true,
       lines: [
-        'Gets two calls with one correlation ID: <code>started</code>, then <code>success</code> or <code>error</code>.',
-        'Only a <code>started</code> with no end means the run never reported back.',
+        'Gets two calls with one correlation ID: one at <code>/listener/before</code>, then one at <code>/listener/after</code>.',
+        'The URL says which is which, so the body doesn’t need a status. A before with no after means the run never reported back.',
       ],
       ids: { 'Correlation ID': ID.correlationId },
-      data: { first: eventsBody('started'), second: eventsBody('success', { costUsd: '0.84' }) },
+      data: { first: { POST: '/listener/before', body: listenerBody }, second: { POST: '/listener/after', body: listenerBody } },
     },
   ]
 
@@ -394,11 +395,11 @@
       { step: 'sort', kind: 'process', x: 176, y: 110, w: 132, h: 60, label: ['Sort events', 'by type'] },
       { step: 'sort', kind: 'bad', x: 168, y: 244, w: 148, h: 52, label: ['Unknown type', 'skipped + warning'] },
       { step: 'correlation', kind: 'process', x: 344, y: 110, w: 132, h: 60, label: ['One', 'correlation ID'] },
-      { step: 'before', kind: 'event', x: 512, y: 110, w: 140, h: 60, label: ['POST before', 'status: started'] },
+      { step: 'before', kind: 'event', x: 512, y: 110, w: 140, h: 60, label: ['POST before', '/listener/before'] },
       { step: 'container', kind: 'llm', x: 688, y: 110, w: 140, h: 60, label: ['Container runs', 'LLM · $'] },
       { step: 'result', kind: 'decide', cx: 905, cy: 140, r: 48, label: ['Result', 'back?'] },
-      { step: 'result', kind: 'bad', x: 826, y: 244, w: 158, h: 52, label: ['No after event', 'only “started” seen'] },
-      { step: 'after', kind: 'event', x: 988, y: 110, w: 140, h: 60, label: ['POST after', 'success / error'] },
+      { step: 'result', kind: 'bad', x: 826, y: 244, w: 158, h: 52, label: ['No after event', 'only before seen'] },
+      { step: 'after', kind: 'event', x: 988, y: 110, w: 140, h: 60, label: ['POST after', '/listener/after'] },
       { step: 'listener', kind: 'end', x: 1160, y: 110, w: 96, h: 60, label: ['Listener', 'pairs them'] },
     ],
     edges: [
@@ -416,6 +417,69 @@
     ],
   }
 
+  /*
+   * The two sections under the Raise events chart: how `before` and `after` events are built and sent.
+   * Line numbers are from the-agent branch 653-agent-pulse-raise-event-type (commit 900e7fc).
+   */
+  const eventSections = [
+    {
+      id: 'before', sys: 'handler', title: 'Before events', tag: 'type: "before"',
+      summary: 'Tells a listener a run is <b>starting</b>. Sent just before the container starts, so only values known up front are in it: no tokens, no cost.',
+      facts: [
+        ['Fires', 'After the workspace volumes are ready, <b>before</b> <code>StartContainerAsync</code>.'],
+        ['Picks', 'Entries with <code>"type": "before"</code> (any case).'],
+        ['Waits?', '<b>Yes.</b> The run waits for every before event, one at a time.'],
+        ['If it fails', '5xx or no answer in 30 s → retried, up to 10 tries. 4xx or an empty required header → not retried. Logged; the run still goes on.'],
+      ],
+      vars: [
+        ['correlationId', 'Made once per run; the same on the after event'],
+        ['metrics.status', '<code>started</code>'],
+        ['metrics.model', 'The block’s configured <code>model</code>'],
+        ['metrics.tokens.total · metrics.cost-usd', 'Empty string (not known yet)'],
+        ['plugin-name', 'From <code>use-plugins</code>'],
+        ['use-inputs · repository-name', 'Same values the prompt uses'],
+      ],
+      code: [
+        ['ProcessingWorkflow.cs:91', 'One correlation ID (<code>Workflow.NewGuid</code>)'],
+        ['ProcessingWorkflow.cs:93', '<code>ReportRaiseEventsAsync(Before)</code>'],
+        ['RaiseEventVariables.cs:32', '<code>BuildBefore</code>: status started, empty metrics'],
+        ['ProcessingWorkflow.cs:332', 'Keeps only entries of this type, then POSTs each'],
+        ['RaiseEventActivities.cs:17', '<code>DeliverRaiseEventAsync</code>: headers, body, POST'],
+      ],
+      rule: { name: 'listener-before', type: 'before', url: 'http://127.0.0.1:8765/listener/before', payload: listenerPayload },
+      ruleNote: 'Goes to this explainer’s own listener (node server.js), not AI Hub. Shows up live in the panel above.',
+      body: listenerBody,
+    },
+    {
+      id: 'after', sys: 'processing', title: 'After events', tag: 'type: "after" · default',
+      summary: 'Tells a listener how a run <b>ended</b> and what it cost. Sent once the container’s result is back and its cost is recorded.',
+      facts: [
+        ['Fires', 'After <code>WaitAndCollectOutputAsync</code> and the cost report, before the 2-minute cleanup wait.'],
+        ['Picks', 'Entries with <code>"type": "after"</code>, <b>or no type</b> (older rules keep working).'],
+        ['Waits?', 'Yes, but the work is done. A slow listener only delays cleanup.'],
+        ['If it fails', 'Same retries as before events. Never changes the run’s outcome. Not sent at all if the container won’t start or the wait throws.'],
+      ],
+      vars: [
+        ['correlationId', 'Same ID as the before event'],
+        ['metrics.status', '<code>success</code> or <code>error</code>'],
+        ['metrics.tokens.total', 'Input + output tokens'],
+        ['metrics.cost-usd', 'From <code>ExecutionCostResolver</code>'],
+        ['metrics.model', 'First model the run reports, else the configured one'],
+        ['plugin-name · use-inputs', 'Same as before events'],
+      ],
+      code: [
+        ['ProcessingWorkflow.cs:114', '<code>ReportExecutionMetricsAsync</code> records cost first'],
+        ['ProcessingWorkflow.cs:115', '<code>ReportRaiseEventsAsync(After)</code>'],
+        ['RaiseEventVariables.cs:45', '<code>Build</code>: status, tokens, cost, model'],
+        ['ProcessingWorkflow.cs:332', 'Same filter and POST loop as before events'],
+        ['RaiseEventActivities.cs:17', '<code>DeliverRaiseEventAsync</code>'],
+      ],
+      rule: { name: 'listener-after', type: 'after', url: 'http://127.0.0.1:8765/listener/after', payload: listenerPayload },
+      ruleNote: 'Goes to this explainer’s listener and pairs with listener-before. Add the metrics.* values above to the payload to see status, tokens and cost.',
+      body: listenerBody,
+    },
+  ]
+
   const workflows = [
     { id: 'github', name: 'GitHub trigger', blurb: 'A labelled PR gets an AI review.', reqId: ID.requestId, steps },
     { id: 'prreview', name: 'PR review', blurb: 'Trigger → harness → LLM → back. Each step shows whether it costs tokens.', reqId: ID.requestId, steps: prReviewSteps },
@@ -423,5 +487,5 @@
     { id: 'events', name: 'Raise events', blurb: 'An agent run tells outside listeners it is starting (before) and how it ended (after), with one correlation ID.', steps: eventsSteps, chart: eventsChart },
   ]
 
-  window.FLOW = { ID, workflows }
+  window.FLOW = { ID, workflows, eventSections }
 })()

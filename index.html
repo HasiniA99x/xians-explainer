@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Xians Webhook Flow</title>
   <meta name="description" content="A GitHub webhook through Xians: a labelled PR, a PR review from trigger to results with LLM cost, redelivery from Agent Studio, and before/after raise-events to outside listeners." />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=4" />
 </head>
 <body>
   <main class="wrap">
@@ -28,6 +28,24 @@
     </div>
 
     <section class="card detail" id="detail" aria-live="polite"></section>
+
+    <!-- Shown only on the Raise events tab: what this page's own listener (server.js) has received -->
+    <div class="extras" data-wf="events" hidden>
+      <section class="card figure lis" id="listener" aria-labelledby="lis-h">
+        <div class="lis-head">
+          <h3 id="lis-h">Live listener</h3>
+          <span class="lis-state" id="lis-state" data-state="off">Not running</span>
+          <button type="button" class="btn lis-clear" id="lis-clear" disabled>Clear</button>
+        </div>
+        <p class="cap">This page is the <b>before</b> listener. Put one of these in a raise-event <code>url</code> and each run shows up here, paired by correlation ID.</p>
+        <div class="lis-urls" id="lis-urls"></div>
+        <p class="lis-help" id="lis-help" hidden>Start it with <code>node server.js</code> in the <code>webhook-flow-explainer</code> folder, then open <code>http://127.0.0.1:8765/#events</code>.</p>
+        <div id="lis-runs"></div>
+      </section>
+    </div>
+
+    <!-- Shown only on the Raise events tab: one section for before events, one for after (filled by app.js) -->
+    <div class="extras ev-sections" id="event-sections" data-wf="events" hidden></div>
 
     <!-- Shown only on the PR review tab -->
     <div class="extras" data-wf="prreview" hidden>
@@ -217,7 +235,7 @@
     </div>
   </main>
 
-  <script src="flow-data.js"></script>
-  <script src="app.js"></script>
+  <script src="flow-data.js?v=4"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
